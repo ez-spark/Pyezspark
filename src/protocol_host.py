@@ -62,7 +62,7 @@ class Host:
         if genomes_per_client <= 0 or max_number_of_trainers <= 0:
             print("Error, genomes per client can't be <= 0, same for max number of trainers")
             exit(1)
-        link = '0.0.0.0' #it should be the link of localtunnel
+        link = ip+':'+str(port) #it should be the link of localtunnel
         
         # setting import parameters
         gym_http_server.glob_val.max_number_of_trainers = max_number_of_trainers
@@ -93,13 +93,12 @@ class Host:
                 if self.client.we_do_care_about_this_trainer():
                     # lets check the history to understand if we can trust him
                     environment_name = self.client.get_environment_name()
-                    glob_val.enter_critical_section()
                     if environment_name not in glob_val.checking_states:
                         is_ok = False# not such environment identifier
                     else:
                         l = glob_val.checking_states[environment_name]['list_to_check']
                         is_ok = self.client.comparing_history_is_ok(l,0.00001)# comparing the history
-                    glob_val.exit_critical_section()
+                    
             if is_ok:# is ok as trainer
                 if self.client.set_body(self, 1, glob_val.current_index, glob_val.next_index):# if is true, a generation run has been completed
                     glob_val.enter_critical_section()

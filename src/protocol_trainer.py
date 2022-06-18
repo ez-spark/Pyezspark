@@ -43,7 +43,7 @@ class Trainer:
                 print("malicious host, closing the connection with this training, and so the process")
                 exit(1)
             # first time receiving something
-            # pay attention, if the host starts the sames training closing its entire process
+            # pay attention, if the host starts the same training closing its entire process
             # it will not have this identifier again, and this trainer will be constantly disconnected by the host
             # in that case this trainer should shut down the process and restart it
             if not self.client.identifier_is_set():
@@ -108,80 +108,40 @@ class Trainer:
             # training
             train = True
             while train:
-				out = self.client.forward_genomes(list_states, self.threads, done, to_count_yet, list_keys, list_rewards)
-				param_post = {}
-				for i in n_genomes:
-					if steps[i] < self.max_number_of_steps and games[i] < self.max_number_of_games:
-						steps[i]+=1
-						if game_done[i]:
-							games[i]+=1
-					if steps[i] < self.max_number_of_steps and games[i] < self.max_number_of_games:
-				len_out = len(out)
-				index
-                env = requests.post(self.base_url+self.next_step_endpoint, data = json.dumps(param_init), headers=headers)
-                print(env)
-                list_instance.append(json.loads(env.content)['instance_id'])
-                state.append(json.loads(env.content)['obs'])
-                rewards.append(0)
-                done.append(False)
-                counter.append(0)
-            print("Environment created")
-            flag = True
-            while flag:
-                start = time.time()
-                print("forwarding genomes")
-                done_g = []
+                list_output_to_keep = []
                 for i in range(n_genomes):
-                    if counter[i]>1:
-                        done_g.append(1)
+                    if steps[i] < self.max_number_of_steps-1 and games[i] < self.max_number_of_games-1:
+                        list_output_to_keep.append(1)
                     else:
-                        done_g.append(0)
-                ret = client.forward_genomes(state, 10,done_g)
+                        list_output_to_keep.append(0)
+                out = self.client.forward_genomes(list_states, self.threads, done, to_count_yet, list_keys, list_rewards, list_output_to_keep)
+                param_post = {}
+                list_of_environments = []
+                actions = []
+                j = 0
                 for i in range(n_genomes):
-                    if counter[i] < 1:
-                        client.add_reward_to_genome(rewards[i], i)
-                end = time.time()
-                print("Computational time: ",end - start)
-                for i in range(n_genomes):
-                    if done[i]:
-                        counter[i]+=1
-                start = time.time()
-                d = {}
-                for i in range(n_genomes):
-                    if counter[i] < 1:
-                        if not done[i]:
-                            d[list_instance[i]] = ret[i]
-                            #param_action['instance_id'] = list_instance[i]
-                            #param_action['action'] = ret[i]
-                            #env = requests.post(step_url.format(instance_id = list_instance[i]), data = json.dumps(param_action), headers=headers)
-                            #state[i] = json.loads(env.content)['observation']
-                            #rewards[i] = json.loads(env.content)['reward']
-                            #done[i] = json.loads(env.content)['done']
+                    if steps[i] < self.max_number_of_steps and games[i] < self.max_number_of_games:
+                        steps[i]+=1
+                        if game_done[i]:
+                            games[i]+=1
+                    if done[i] > 0:
+                        to_count_yet[i] = 0
+                    else:
+                        if steps[i] < self.max_number_of_steps and games[i] < self.max_number_of_games:
+                            list_of_environments.append(list_keys[i])
+                            actions.appendout[j]
                         else:
-                            rewards[i] = 0
-                            done[i] = False
-                            counter[i]+=1
-                    else:
-                        rewards[i] = 0
-                env = requests.post(step_url, data = json.dumps(d), headers=headers)
-                end = time.time()
-                
-                print("Request time: ",end - start)
-                #print(env)
-                #print(env.content)
-                
-                d = json.loads(env.content)
-                for i in d.keys():
-                    for j in range(len(list_instance)):
-                        if i == list_instance[j]:
-                            state[j] = d[i][0]
-                            rewards[j] = d[i][1]
-                            done[j] = d[i][2]
-                            break
-                flag = False
+                            done[i] = 1
+                        j+=1
+                length_env_to_count = len(list_of_environments)
+                for i in range(length_env_to_count):
+                    param_post[list_of_environments[i]] = actions[i]
+                res = requests.post(self.base_url+self.next_step_endpoint, data = json.dumps(param_post), headers=headers)
+                res = json.loads(res.content)
+                list_got = list(res.keys())
                 for i in range(n_genomes):
-                    if counter[i] < 1:
-                        flag = True
-                        break
-            print("finished")
-            client.set_values_back_in_body()
+                    if list_keys[i] in list_got:
+                        list_states[i] = res[list_keys[i]][0]
+                        list_rewards[i] = res[list_keys[i]][1]
+                        game_done[i] = res[list_keys[i]][2]
+            self.client.set_values_back_in_body()

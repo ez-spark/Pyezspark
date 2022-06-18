@@ -41,9 +41,20 @@ class GlobalVal:
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
         self.shared_d = {}
+        '''
+        share_d struct:
+        (key, value) = (random id,{'ids':[list_of_environment_ids], 'interactions':integer})
+        '''
         self.reverse_shared_d = {}
-        self.d_for_stored_states = {}
+        '''
+        reverse_shared_d struct:
+        (key, value) = (environment_id,[shared_d_id,n_games,n_steps,stopped_training (True/false), last call was end of game in its instance (True/false)])
+        '''
         self.checking_states = {}
+        '''
+        checking_states struct:
+        (key, value) = (environment_id[0] from the list of share_d, {'index':0, 'associated_id':id, 'current_index':self.current_index-1,'index_got':self.current_index, 'length': n, 'list_to_check':[]})
+        '''
         self.current_trainers = 0
         self.current_index = self.generate_indexing()
         self.next_index = self.generate_indexing()
@@ -82,6 +93,9 @@ class GlobalVal:
         for i in range(len(list_of_state_ids)):
             if self.checking_states[list_of_state_ids[i]]['associated_id'] == id:
                 for j in range(n):
+                    # if it enters in this if we are recording stuff
+                    # remember we must record also the actions given back
+                    # and this will always happen!
                     if self.checking_states[list_of_state_ids[i]]['index'] == self.checking_states[list_of_state_ids[i]]['current_index']:
                         l = flat_state(states[i])
                         for kk in l:
@@ -93,8 +107,23 @@ class GlobalVal:
                     self.checking_states[list_of_state_ids[i]]['index'] = self.checking_states[list_of_state_ids[i]]['index']%self.checking_states[list_of_state_ids[i]]['length']
                 return True
         return False
-                        
-    
+    # the history take into account also the actions given back             
+    def add_actions(self, list_of_environemnts_id, actions):
+        list_of_environemnts_id = zip(*sorted(zip(list_of_environemnts_id, actions)))
+        n = len(list_of_environments_id)
+        id = ''
+        for i in range(n):
+            if list_of_environments_id[i] not in self.reverse_shared_d:
+                return False
+            else:
+                id = self.reverse_shared_d[list_of_environments_id[i]][0]
+                break
+        list_of_state_ids = list(self.checking_states.keys())
+        for i in range(len(list_of_state_ids)):
+            if self.checking_states[list_of_state_ids[i]]['associated_id'] == id:
+                for j in actions:
+                    self.checking_states[list_of_state_ids[i]]['list_to_check'].append(j)
+        
     def hash_enviroments(self, list_of_environments_id, states, rewards):
         '''
         it s asking us to hash these environments, this means that, first these environments
@@ -117,7 +146,8 @@ class GlobalVal:
             self.reverse_shared_d[list_of_environments_id[i]] = [id,0,0,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
             self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':self.current_index-1,'index_got':self.current_index, 'length': n, 'list_to_check':[]}
         return self.check_states(list_of_environments_id,states,rewards)
-    
+        
+    # someone is asking us to make a new step, lets check if its request is fair
     def steps_check(self, list_of_environments_id):
         n = len(list_of_environments_id)
         id = None
@@ -501,7 +531,11 @@ def multi_step():
     l2 = []
     l3 = []
     l4 = []
+    l5 = []
+    l6 = []
     for key in json:
+        l5.append(key)
+        l6.append(float(json[key]))
         if glob_val.reverse_shared_d[key][4]:
             obs_jsonable = envs.reset(key)
             reward = 0
@@ -516,6 +550,7 @@ def multi_step():
         l4.append(done)
     l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
     glob_val.enter_critical_section()
+    glob_val.add_actions(l5,l6)
     glob_val.update_steps(l1,l4,l2,l3)
     glob_val.shutdown_envs(l1)
     glob_val.exit_critical_section()
