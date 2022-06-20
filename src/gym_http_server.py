@@ -108,8 +108,8 @@ class GlobalVal:
                 return True
         return False
     # the history take into account also the actions given back             
-    def add_actions(self, list_of_environemnts_id, actions):
-        list_of_environemnts_id = zip(*sorted(zip(list_of_environemnts_id, actions)))
+    def add_actions(self, list_of_environments_id, actions):
+        list_of_environments_id, actions = zip(*sorted(zip(list_of_environments_id, actions)))
         n = len(list_of_environments_id)
         id = ''
         for i in range(n):
@@ -463,6 +463,7 @@ def env_list_all():
 ########## API route definitions ##########
 @app.route('/v1/envs/', methods=['POST'])
 def env_create():
+    print('creating environments')
     """
     Create an instance of the specified environment
 
@@ -474,6 +475,7 @@ def env_create():
     """
     glob_val.enter_critical_section()
     if glob_val.current_trainers >= glob_val.max_number_trainers:
+        print('we are full')
         glob_val.exit_critical_section()
         ret = {}
         ret['full'] = True
@@ -482,6 +484,7 @@ def env_create():
     n_instances = get_required_param(request.get_json(), 'n_instances')
     seed = None
     if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances):
+        print('not ok request on creating environment')
         glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
@@ -500,7 +503,7 @@ def env_create():
     glob_val.hash_enviroments(l1,l2,l3)
     glob_val.shutdown_envs(l1)
     glob_val.exit_critical_section()
-
+    
     return jsonify(ret)
 
 @app.route('/v1/envs/step/', methods=['POST'])#multiple step request
@@ -516,12 +519,17 @@ def multi_step():
     - instance1:[obs, reward, done, rest_obs]
     - ...
     """
+    print('asking next step')
+    print('data sent: ')
+    
     json = request.get_json()
     response = {}
+    print(json)
     keys = list(json.keys())
     keys.sort()
     glob_val.enter_critical_section()
     if not glob_val.steps_check(keys):
+        print('not ok request on step')
         glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
@@ -565,6 +573,7 @@ class ServerRun(threading.Thread):
  
         # helper function to execute the threads
     def run(self):
+        print('starting the gym server on '+self.ip+':'+str(self.port))
         app.run(host = self.ip, port = self.port)
 
 def init_gym_server(ip = '127.0.0.1', port = 5000):
