@@ -118,6 +118,8 @@ class Trainer:
             # training
             train = True
             while train:
+                print('steps:')
+                print(steps)
                 list_output_to_keep = []
                 for i in range(n_genomes):
                     if steps[i] < self.max_number_of_steps-1 and games[i] < self.max_number_of_games-1:
@@ -131,6 +133,7 @@ class Trainer:
                 list_of_environments = []
                 actions = []
                 j = 0
+                n_done = 0
                 for i in range(n_genomes):
                     if steps[i] < self.max_number_of_steps and games[i] < self.max_number_of_games:
                         steps[i]+=1
@@ -146,6 +149,8 @@ class Trainer:
                             done[i] = 1
                         j+=1
                 length_env_to_count = len(list_of_environments)
+                if length_env_to_count == 0:
+                    break
                 for i in range(length_env_to_count):
                     param_post[list_of_environments[i]] = actions[i]
                 print('post request, post body: '+str(param_post))
@@ -157,5 +162,6 @@ class Trainer:
                         list_states[i] = res[list_keys[i]][0]
                         list_rewards[i] = res[list_keys[i]][1]
                         game_done[i] = res[list_keys[i]][2]
+            exit(0)
             print('training iteration done, now we set the body again')
             self.client.set_values_back_in_body()

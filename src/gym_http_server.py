@@ -122,7 +122,12 @@ class GlobalVal:
         for i in range(len(list_of_state_ids)):
             if self.checking_states[list_of_state_ids[i]]['associated_id'] == id:
                 for j in actions:
-                    self.checking_states[list_of_state_ids[i]]['list_to_check'].append(j)
+                    if self.checking_states[list_of_state_ids[i]]['index'] == self.checking_states[list_of_state_ids[i]]['current_index']:
+                        self.checking_states[list_of_state_ids[i]]['list_to_check'].append(j)
+                        self.checking_states[list_of_state_ids[i]]['current_index']+=self.checking_states[list_of_state_ids[i]]['index_got']
+                        self.checking_states[list_of_state_ids[i]]['current_index'] = self.checking_states[list_of_state_ids[i]]['current_index']%self.checking_states[list_of_state_ids[i]]['length']
+                    self.checking_states[list_of_state_ids[i]]['index']+=1
+                    self.checking_states[list_of_state_ids[i]]['index'] = self.checking_states[list_of_state_ids[i]]['index']%self.checking_states[list_of_state_ids[i]]['length']
         
     def hash_enviroments(self, list_of_environments_id, states, rewards):
         '''
@@ -143,7 +148,7 @@ class GlobalVal:
         id = self.generate_id(32)
         self.shared_d[id] = {'ids':list(list_of_environments_id), 'interactions':1}#to an identifier is associated the list
         for i in range(n):
-            self.reverse_shared_d[list_of_environments_id[i]] = [id,0,0,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
+            self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
             self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':self.current_index-1,'index_got':self.current_index, 'length': n, 'list_to_check':[]}
         return self.check_states(list_of_environments_id,states,rewards)
         
@@ -218,7 +223,7 @@ class GlobalVal:
         for i in range(n):
             if self.reverse_shared_d[list_of_environments_id[i]][3]:
                 l.append(list_of_environments_id[i])
-                print(self.shared_d[id]['ids'])
+                #print(self.shared_d[id]['ids'])
                 self.shared_d[id]['ids'].remove(list_of_environments_id[i])
                 self.reverse_shared_d.pop(list_of_environments_id[i], None)
         if len(self.shared_d[id]['ids']) == 0:
@@ -524,7 +529,7 @@ def multi_step():
     
     json = request.get_json()
     response = {}
-    print(json)
+    #print(json)
     keys = list(json.keys())
     keys.sort()
     glob_val.enter_critical_section()
@@ -561,6 +566,7 @@ def multi_step():
     glob_val.add_actions(l5,l6)
     glob_val.update_steps(l1,l4,l2,l3)
     glob_val.shutdown_envs(l1)
+    print(glob_val.reverse_shared_d)
     glob_val.exit_critical_section()
     return jsonify(response)
 

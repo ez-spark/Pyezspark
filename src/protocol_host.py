@@ -103,7 +103,7 @@ class Host:
                 if self.client.we_do_care_about_this_trainer():
                     print('we do care about this trainer')
                     # lets check the history to understand if we can trust him
-                    environment_name = self.client.get_environment_name().decode('utf-8')
+                    environment_name = self.client.get_instance_name().decode('utf-8')
                     print('the environment name that this trainer match our is: '+environment_name)
                     if environment_name not in glob_val.checking_states:
                         print('ok we do not have such environment')
