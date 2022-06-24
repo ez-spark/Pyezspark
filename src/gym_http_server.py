@@ -23,6 +23,8 @@ def flat_state(vector):
         return v
     return None
 
+#init_all = 0
+
 ########## Globals that must be modified and shared by threads ##########
 class GlobalVal:
     def __init__(self, max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games):
@@ -40,6 +42,7 @@ class GlobalVal:
         self.max_number_trainers = max_number_trainers#max number of trainers that we can allow togheter
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
+        self.id_p2p = {}
         self.shared_d = {}
         '''
         share_d struct:
@@ -97,18 +100,25 @@ class GlobalVal:
                     # remember we must record also the actions given back
                     # and this will always happen!
                     if self.checking_states[list_of_state_ids[i]]['index'] == self.checking_states[list_of_state_ids[i]]['current_index']:
-                        l = flat_state(states[i])
+                        #print('n: '+str(n))
+                        #print('index: '+str(self.checking_states[list_of_state_ids[i]]['index']))
+                        #print('index got: '+str(self.checking_states[list_of_state_ids[i]]['current_index']))
+                        l = flat_state(states[j])
                         for kk in l:
                             self.checking_states[list_of_state_ids[i]]['list_to_check'].append(kk)
-                        self.checking_states[list_of_state_ids[i]]['list_to_check'].append(reward[i])
+                        #print(st)
+                        self.checking_states[list_of_state_ids[i]]['list_to_check'].append(reward[j])
                         self.checking_states[list_of_state_ids[i]]['current_index']+=self.checking_states[list_of_state_ids[i]]['index_got']
                         self.checking_states[list_of_state_ids[i]]['current_index'] = self.checking_states[list_of_state_ids[i]]['current_index']%self.checking_states[list_of_state_ids[i]]['length']
+                        #print('length: '+str(len(self.checking_states[list_of_state_ids[i]]['list_to_check'])))
+                        
                     self.checking_states[list_of_state_ids[i]]['index']+=1
                     self.checking_states[list_of_state_ids[i]]['index'] = self.checking_states[list_of_state_ids[i]]['index']%self.checking_states[list_of_state_ids[i]]['length']
                 return True
         return False
     # the history take into account also the actions given back             
     def add_actions(self, list_of_environments_id, actions):
+        #return
         list_of_environments_id, actions = zip(*sorted(zip(list_of_environments_id, actions)))
         n = len(list_of_environments_id)
         id = ''
@@ -123,7 +133,7 @@ class GlobalVal:
             if self.checking_states[list_of_state_ids[i]]['associated_id'] == id:
                 for j in actions:
                     if self.checking_states[list_of_state_ids[i]]['index'] == self.checking_states[list_of_state_ids[i]]['current_index']:
-                        self.checking_states[list_of_state_ids[i]]['list_to_check'].append(j)
+                        self.checking_states[list_of_state_ids[i]]['list_to_check'].append(float(j))
                         self.checking_states[list_of_state_ids[i]]['current_index']+=self.checking_states[list_of_state_ids[i]]['index_got']
                         self.checking_states[list_of_state_ids[i]]['current_index'] = self.checking_states[list_of_state_ids[i]]['current_index']%self.checking_states[list_of_state_ids[i]]['length']
                     self.checking_states[list_of_state_ids[i]]['index']+=1
@@ -149,7 +159,7 @@ class GlobalVal:
         self.shared_d[id] = {'ids':list(list_of_environments_id), 'interactions':1}#to an identifier is associated the list
         for i in range(n):
             self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
-            self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':self.current_index-1,'index_got':self.current_index, 'length': n, 'list_to_check':[]}
+            self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':(self.current_index-1)%n,'index_got':self.current_index, 'length': n, 'list_to_check':[]}
         return self.check_states(list_of_environments_id,states,rewards)
         
     # someone is asking us to make a new step, lets check if its request is fair
@@ -200,9 +210,13 @@ class GlobalVal:
         glob_val.check_states(list_of_environments_id,states,rewards)
         for i in range(n):
             self.reverse_shared_d[list_of_environments_id[i]][2]+=1
-            if done[i]:
+            if done[i] or self.reverse_shared_d[list_of_environments_id[i]][2] >= self.max_number_of_steps:
+                self.reverse_shared_d[list_of_environments_id[i]][2] = 0
                 self.reverse_shared_d[list_of_environments_id[i]][1]+=1
-            if self.reverse_shared_d[list_of_environments_id[i]][1] >= self.max_number_of_games or self.reverse_shared_d[list_of_environments_id[i]][2] >= self.max_number_of_steps:
+                self.reverse_shared_d[list_of_environments_id[i]][4] = True
+            else:
+                self.reverse_shared_d[list_of_environments_id[i]][4] = False
+            if self.reverse_shared_d[list_of_environments_id[i]][1] >= self.max_number_of_games:
                 self.reverse_shared_d[list_of_environments_id[i]][3] = True
         return True
     
@@ -223,13 +237,22 @@ class GlobalVal:
         for i in range(n):
             if self.reverse_shared_d[list_of_environments_id[i]][3]:
                 l.append(list_of_environments_id[i])
-                #print(self.shared_d[id]['ids'])
                 self.shared_d[id]['ids'].remove(list_of_environments_id[i])
                 self.reverse_shared_d.pop(list_of_environments_id[i], None)
         if len(self.shared_d[id]['ids']) == 0:
             self.shared_d.pop(id,None)
             self.current_trainers-=1
         return l
+    
+    def close_environments(self, environment):
+        if environment not in self.reverse_shared_d:
+            return
+        id = self.reverse_shared_d[environment][0]
+        for i in self.reverse_shared_d:
+            if self.reverse_shared_d[i][0] == id:
+                self.reverse_shared_d.pop(i,None)
+        self.shared_d.pop(id,None)
+        self.current_trainers-=1
    
     def set_globals(self,max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games):
         if max_number_genomes_per_client <= 0:
@@ -426,70 +449,34 @@ def handle_invalid_usage(error):
     response.status_code = error.status_code
     return response
 
-'''
-########## API route definitions ##########
-@app.route('/v1/envs/', methods=['POST'])
-def env_create():
-    """
-    Create an instance of the specified environment
-
-    Parameters:
-        - env_id: gym environment ID string, such as 'CartPole-v0'
-        - seed: set the seed for this env's random number generator(s).
-    Returns:
-        - instance_id: a short identifier (such as '3c657dbc')
-        for the created environment instance. The instance_id is
-        used in future API calls to identify the environment to be
-        manipulated
-    """
-    env_id = get_required_param(request.get_json(), 'env_id')
-    seed = get_optional_param(request.get_json(), 'seed', None)
-    instance_id = envs.create(env_id, seed)
-    obs = envs.reset(instance_id)
-    return jsonify(instance_id = instance_id, obs = obs)
-'''
-
-'''
-@app.route('/v1/envs/', methods=['GET'])
-def env_list_all():
-    """
-    List all environments running on the server
-
-    Returns:
-        - envs: dict mapping instance_id to env_id
-        (e.g. {'3c657dbc': 'CartPole-v0'}) for every env
-        on the server
-    """
-    all_envs = envs.list_all()
-    return jsonify(all_envs = all_envs)
-'''
-
 
 ########## API route definitions ##########
 @app.route('/v1/envs/', methods=['POST'])
 def env_create():
-    print('creating environments')
+    #print('creating environments')
     """
     Create an instance of the specified environment
 
     Parameters:
         - env_id: gym environment ID string, such as 'CartPole-v0'
         - n_instances: number of instances to instantiate
+        - identifier
     Returns:
         - instance_id: {obs, reward}, ...
     """
     glob_val.enter_critical_section()
     if glob_val.current_trainers >= glob_val.max_number_trainers:
-        print('we are full')
+        #print('we are full')
         glob_val.exit_critical_section()
         ret = {}
         ret['full'] = True
         return jsonify(ret)
     env_id = get_required_param(request.get_json(), 'env_id')
     n_instances = get_required_param(request.get_json(), 'n_instances')
+    identifier = get_required_param(request.get_json(),'identifier')
     seed = None
-    if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances):
-        print('not ok request on creating environment')
+    if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
+        #print('not ok request on creating environment')
         glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
@@ -524,17 +511,12 @@ def multi_step():
     - instance1:[obs, reward, done, rest_obs]
     - ...
     """
-    print('asking next step')
-    print('data sent: ')
-    
     json = request.get_json()
     response = {}
-    #print(json)
     keys = list(json.keys())
     keys.sort()
     glob_val.enter_critical_section()
     if not glob_val.steps_check(keys):
-        print('not ok request on step')
         glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
@@ -555,7 +537,6 @@ def multi_step():
             done = False
         else:
             obs_jsonable, reward, done, info = envs.step(key, json[key], False)
-        glob_val.reverse_shared_d[key][4] = done
         response[key] = [obs_jsonable, reward, done]
         l1.append(key)
         l2.append(obs_jsonable)
@@ -566,7 +547,6 @@ def multi_step():
     glob_val.add_actions(l5,l6)
     glob_val.update_steps(l1,l4,l2,l3)
     glob_val.shutdown_envs(l1)
-    print(glob_val.reverse_shared_d)
     glob_val.exit_critical_section()
     return jsonify(response)
 
