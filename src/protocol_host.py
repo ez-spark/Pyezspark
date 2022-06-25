@@ -77,6 +77,7 @@ class Host:
         # connection for p2p through ezprotocol
         self.client.connect(remote_ip,remote_port, genomes_per_client = genomes_per_client)
         while(True):
+            print('listening')
             # keep the communication active
             while(not self.client.is_disconnected()):
                 self.client.host_direct_main_loop()
@@ -89,24 +90,41 @@ class Host:
             current_id = None
             # if we did already assigned an identifier to him:
             if self.client.trainer_has_identifier():
+                print('trainer has identifier')
                 current_id = self.client.get_identifier().decode('utf-8')
                 # it s a trainer that has sent us stuff we are intereted in
-                if self.client.we_do_care_about_this_trainer():
-                    # lets check the history to understand if we can trust him
-                    environment_name = self.client.get_instance_name().decode('utf-8')
-                    if environment_name in gym_http_server.glob_val.reverse_shared_d:
-                        is_ok = False
-                        gym_http_server.glob_val.enter_critical_section()
-                        gym_http_server.glob_val.close_environments(environment_name)
-                        gym_http_server.glob_val.exit_critical_section()
-                    elif environment_name not in gym_http_server.glob_val.checking_states:
-                        is_ok = False# not such environment identifier
-                    else:
+                # lets check the history to understand if we can trust him
+                environment_name = self.client.get_instance_name().decode('utf-8')
+                if environment_name in gym_http_server.glob_val.reverse_shared_d or current_id not in gym_http_server.glob_val.id_p2p or self.client.get_number_of_fitnesses() != gym_http_server.glob_val.id_p2p[current_id]['n_genomes']:
+                    print('something is wrong with the trainer')
+                    is_ok = False
+                    gym_http_server.glob_val.enter_critical_section()
+                    gym_http_server.glob_val.close_environments(environment_name)
+                    gym_http_server.glob_val.exit_critical_section()
+                elif environment_name not in gym_http_server.glob_val.checking_states:
+                    print('no such environment name')
+                    is_ok = False# not such environment identifier
+                else:
+                    print('setting the fitnesses')
+                    d = gym_http_server.glob_val.checking_states[environment_name]['rewards']
+                    l = list(d.keys())
+                    l.sort()
+                    l_rew = []
+                    for i in l:
+                        l_rew.append(d[i])
+                    self.client.set_fitnesses(l_rew)
+                    
+                if is_ok:
+                    print('the trainer is ok')
+                    if self.client.we_do_care_about_this_trainer():
+                        print('we do care about this trainer, checking the history')
                         l = gym_http_server.glob_val.checking_states[environment_name]['list_to_check']
                         is_ok = self.client.comparing_history_is_ok(l,0.00001)# comparing the history
-                        gym_http_server.glob_val.checking_states.pop(environment_name, None)
+                    gym_http_server.glob_val.checking_states.pop(environment_name, None)
+               
                     
             if is_ok:# is ok as trainer
+                print('trainer is ok')
                 if self.client.set_body(1, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index):# if is true, a generation run has been completed
                     gym_http_server.glob_val.enter_critical_section()
                     gym_http_server.glob_val.current_index = gym_http_server.glob_val.next_index
@@ -119,6 +137,7 @@ class Host:
                     current_id = self.client.get_identifier().decode('utf-8')
                     gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes()}
             else:
+                print('trainer is not ok')
                 if current_id != None:
                     if current_id in gym_http_server.glob_val.id_p2p:
                         gym_http_server.glob_val.id_p2p.pop(current_id, None)

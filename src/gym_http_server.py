@@ -96,6 +96,7 @@ class GlobalVal:
         for i in range(len(list_of_state_ids)):
             if self.checking_states[list_of_state_ids[i]]['associated_id'] == id:
                 for j in range(n):
+                    self.checking_states[list_of_state_ids[i]]['rewards'][list_of_environments_id[j]] += reward[j]
                     # if it enters in this if we are recording stuff
                     # remember we must record also the actions given back
                     # and this will always happen!
@@ -157,9 +158,10 @@ class GlobalVal:
         self.current_trainers+=1# adding a trainer 
         id = self.generate_id(32)
         self.shared_d[id] = {'ids':list(list_of_environments_id), 'interactions':1}#to an identifier is associated the list
+        self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':(self.current_index-1)%n,'index_got':self.current_index, 'length': n, 'list_to_check':[], 'rewards':{}}
         for i in range(n):
             self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
-            self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':(self.current_index-1)%n,'index_got':self.current_index, 'length': n, 'list_to_check':[]}
+            self.checking_states[list_of_environments_id[0]]['rewards'][list_of_environments_id[i]] = 0
         return self.check_states(list_of_environments_id,states,rewards)
         
     # someone is asking us to make a new step, lets check if its request is fair
@@ -245,14 +247,14 @@ class GlobalVal:
         return l
     
     def close_environments(self, environment):
-        if environment not in self.reverse_shared_d:
-            return
-        id = self.reverse_shared_d[environment][0]
-        for i in self.reverse_shared_d:
-            if self.reverse_shared_d[i][0] == id:
-                self.reverse_shared_d.pop(i,None)
-        self.shared_d.pop(id,None)
-        self.current_trainers-=1
+        self.checking_states.pop(environment,None)
+        if environment in self.reverse_shared_d:
+            id = self.reverse_shared_d[environment][0]
+            for i in self.reverse_shared_d:
+                if self.reverse_shared_d[i][0] == id:
+                    self.reverse_shared_d.pop(i,None)
+            self.shared_d.pop(id,None)
+            self.current_trainers-=1
    
     def set_globals(self,max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games):
         if max_number_genomes_per_client <= 0:
