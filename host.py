@@ -1,7 +1,7 @@
 import src.protocol_host as host
 
 gym_game_name = 'CartPole-v0'
-alone_training_iterations = 0
+alone_training_iterations = 100
 configuration_dict = {}
 configuration_dict['input_size'] = 4
 configuration_dict['output_size'] = 2
@@ -31,4 +31,5 @@ training_public_key = 'training_public_key1'
 training_private_key = 'training_private_key1'
 
 h = host.Host(gym_game_name, alone_training_iterations,configuration_dict,max_number_of_games,max_number_of_steps,training_public_key,training_private_key)
+h.alone_training()
 h.distributed_training('0.0.0.0', 8080,100,10)

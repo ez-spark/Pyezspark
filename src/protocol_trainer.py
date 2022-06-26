@@ -30,6 +30,7 @@ class Trainer:
     def train(self):
         environment_name = None
         while(True):
+            #  A LIMIT MUST BE ADDED
             
             # communication protocol is acting
             while(not self.client.is_disconnected()):
@@ -37,6 +38,8 @@ class Trainer:
             #we have been disconnected by the server (timeout, or we communicated something bad to host, or to the server)
             if self.client.got_broken_pipe():
                 self.client.connect(self.remote_ip,self.remote_port)
+                # adding request to server with http when was last time host connected
+                # then, if the current time - last time >= limits close this process (probably the host is not hosting anymore)
                 continue
             #lets check if is ok what the host has sent us
             if not self.client.is_body_ok_for_trainer_neat():
