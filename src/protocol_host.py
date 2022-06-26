@@ -62,8 +62,9 @@ class Host:
                     if n_games >= self.max_number_of_games:
                         break
             self.neat.generation_run()
+        self.neat.reset_fitnesses()
     
-    def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000):
+    def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000, timeout=20):
         if genomes_per_client <= 0 or max_number_of_trainers <= 0:
             print("Error, genomes per client can't be <= 0, same for max number of trainers")
             exit(1)
@@ -76,12 +77,17 @@ class Host:
         gym_http_server.glob_val.max_number_of_games = self.max_number_of_games
         # starting the gym server on another thread
         gym_http_server.init_gym_server(ip,port)
+        # starting the timeout for the environments
+        gym_http_server.init_environments_timeout(timeout)
         
         # initializing the host client with ezspark proxy
         self.client = ezclient.Client(self.training_public_key,training_private_key = self.training_private_key,neat_class = self.neat, gym_game_name = self.gym_game_name, buffer_size = 30000, genome_input = self.input_size, genome_output = self.output_size, url_name = link)
         # connection for p2p through ezprotocol
         self.client.connect(remote_ip,remote_port, genomes_per_client = genomes_per_client)
+        self.neat.set_generation_iter(self.alone_training_iterations)
+        gym_http_server.glob_val.generation = self.alone_training_iterations+1
         while(True):
+            print('communicating')
             # keep the communication active
             
             # checking first with api if this host is already on
@@ -96,9 +102,12 @@ class Host:
             # we are here, a trainer is communicating with us
             is_ok = True
             current_id = None
+            print('new trainer')
             # if we did already assigned an identifier to him:
             if self.client.trainer_has_identifier():
+                
                 current_id = self.client.get_identifier().decode('utf-8')
+                print(current_id)
                 # it s a trainer that has sent us stuff we are intereted in
                 # lets check the history to understand if we can trust him
                 environment_name = self.client.get_instance_name().decode('utf-8')
@@ -125,16 +134,19 @@ class Host:
                     gym_http_server.glob_val.checking_states.pop(environment_name, None)
                
             if is_ok:# is ok as trainer
+                print('trainer is ok')
                 if self.client.set_body(1, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index):# if is true, a generation run has been completed
                     gen_run = self.neat.get_generation_iter()
                     if gen_run >= self.configuration_dict['generations']:
                         print('training ended')
                         exit(0)
+                    gym_http_server.glob_val.generation = gen_run+1
                     gym_http_server.glob_val.enter_critical_section()
                     gym_http_server.glob_val.current_index = gym_http_server.glob_val.next_index
                     gym_http_server.glob_val.next_index = gym_http_server.glob_val.generate_indexing()
                     gym_http_server.glob_val.exit_critical_section()
-                    
+                else:
+                    print('not new generation')
                 if current_id != None:
                     gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes()}
                 else:

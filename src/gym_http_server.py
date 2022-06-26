@@ -9,6 +9,8 @@ import sys
 import json
 import string
 import logging
+from datetime import datetime
+
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.ERROR)
 
@@ -42,8 +44,10 @@ class GlobalVal:
         self.max_number_trainers = max_number_trainers#max number of trainers that we can allow togheter
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
+        self.generation = 1
         self.id_p2p = {}
         self.shared_d = {}
+        self.timeout_d = {}
         '''
         share_d struct:
         (key, value) = (random id,{'ids':[list_of_environment_ids], 'interactions':integer})
@@ -140,7 +144,7 @@ class GlobalVal:
                     self.checking_states[list_of_state_ids[i]]['index']+=1
                     self.checking_states[list_of_state_ids[i]]['index'] = self.checking_states[list_of_state_ids[i]]['index']%self.checking_states[list_of_state_ids[i]]['length']
         
-    def hash_enviroments(self, list_of_environments_id, states, rewards):
+    def hash_enviroments(self, list_of_environments_id, states, rewards, current_id):
         '''
         it s asking us to hash these environments, this means that, first these environments
         have been just created, no other environments with same ids should exist, also,
@@ -162,6 +166,7 @@ class GlobalVal:
         for i in range(n):
             self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
             self.checking_states[list_of_environments_id[0]]['rewards'][list_of_environments_id[i]] = 0
+        self.timeout_d[id] = {'shared_d':id, 'checking_states':list_of_environments_id[0], 'reverse_shared_d':list_of_environments_id, 'last_interaction':datetime.now(), 'seconds_timeout':0.6+n*(self.generation*0.001+0.2)}
         return self.check_states(list_of_environments_id,states,rewards)
         
     # someone is asking us to make a new step, lets check if its request is fair
@@ -192,6 +197,7 @@ class GlobalVal:
         and that are a sublist of the list of all the environments of the identifier associated to them.
         than we must check that is asking us the environments that are not done yet with the training
         '''
+        
         n = len(list_of_environments_id)
         id = None
         for i in range(n):
@@ -206,6 +212,19 @@ class GlobalVal:
                 return False
         if id == None:
             return False
+        
+        # reseting the last interaction time
+        flag = False
+        for i in self.timeout_d:
+            for j in self.timeout_d[i]['reverse_shared_d']:
+                if j in list_of_environments_id:
+                    self.timeout_d[i]['last_interaction'] = datetime.now()
+                    flag = True
+                    break
+                else:
+                    break
+            if flag:
+                break
         
         # saving the correct states
         list_of_environments_id, done, states, rewards = zip(*sorted(zip(list_of_environments_id, done, states, rewards)))
@@ -240,9 +259,11 @@ class GlobalVal:
             if self.reverse_shared_d[list_of_environments_id[i]][3]:
                 l.append(list_of_environments_id[i])
                 self.shared_d[id]['ids'].remove(list_of_environments_id[i])
+                envs.env_close(list_of_environments_id[i])
                 self.reverse_shared_d.pop(list_of_environments_id[i], None)
         if len(self.shared_d[id]['ids']) == 0:
             self.shared_d.pop(id,None)
+            self.timeout_d.pop(id,None)
             self.current_trainers-=1
         return l
     
@@ -252,8 +273,10 @@ class GlobalVal:
             id = self.reverse_shared_d[environment][0]
             for i in self.reverse_shared_d:
                 if self.reverse_shared_d[i][0] == id:
+                    envs.env_close(i)
                     self.reverse_shared_d.pop(i,None)
             self.shared_d.pop(id,None)
+            self.timeout_d.pop(id,None)
             self.current_trainers-=1
    
     def set_globals(self,max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games):
@@ -494,7 +517,7 @@ def env_create():
         l2.append(ret[instance]['obs'])
         l3.append(0)
     l1, l2, l3 = zip(*sorted(zip(l1, l2, l3)))
-    glob_val.hash_enviroments(l1,l2,l3)
+    glob_val.hash_enviroments(l1,l2,l3, identifier)
     glob_val.shutdown_envs(l1)
     glob_val.exit_critical_section()
     
@@ -564,6 +587,26 @@ class ServerRun(threading.Thread):
         print('starting the gym server on '+self.ip+':'+str(self.port))
         app.run(host = self.ip, port = self.port)
 
+class timeoutRun(threading.Thread):
+    def __init__(self, timeout):
+        threading.Thread.__init__(self)
+        self.timeout = timeout
+    def run(self):
+        while True:
+            time.sleep(self.timeout)
+            glob_val.enter_critical_section()
+            date = datetime.now()
+            for i in glob_val.timeout_d:
+                if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= glob_val.timeout_d[i]['seconds_timeout']:
+                    glob_val.close_environments(glob_val.timeout_d[i]['reverse_shared_d'][0])
+                    print('ups')
+            glob_val.exit_critical_section()
+            
+
 def init_gym_server(ip = '127.0.0.1', port = 5000):
     starting_thread = ServerRun(ip,port)
+    starting_thread.start()
+
+def init_environments_timeout(timeout = 20):
+    starting_thread = timeoutRun(timeout)
     starting_thread.start()

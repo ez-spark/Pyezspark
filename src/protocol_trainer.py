@@ -31,7 +31,7 @@ class Trainer:
         environment_name = None
         while(True):
             #  A LIMIT MUST BE ADDED
-            
+            print('communicating')
             # communication protocol is acting
             while(not self.client.is_disconnected()):
                 self.client.trainer_direct_main_loop()
@@ -88,7 +88,6 @@ class Trainer:
                     exit(1)
             list_keys = list(res.keys())
             list_keys.sort()
-            
             if n_genomes != len(list_keys):
                 exit(1)
             

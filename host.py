@@ -1,7 +1,7 @@
 import src.protocol_host as host
 
 gym_game_name = 'CartPole-v0'
-alone_training_iterations = 100
+alone_training_iterations = 20
 configuration_dict = {}
 configuration_dict['input_size'] = 4
 configuration_dict['output_size'] = 2
