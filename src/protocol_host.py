@@ -87,7 +87,6 @@ class Host:
         self.neat.set_generation_iter(self.alone_training_iterations)
         gym_http_server.glob_val.generation = self.alone_training_iterations+1
         while(True):
-            print('communicating')
             # keep the communication active
             
             # checking first with api if this host is already on
@@ -102,20 +101,20 @@ class Host:
             # we are here, a trainer is communicating with us
             is_ok = True
             current_id = None
-            print('new trainer')
+            we_care = False
             # if we did already assigned an identifier to him:
             if self.client.trainer_has_identifier():
                 
                 current_id = self.client.get_identifier().decode('utf-8')
                 print(current_id)
+                gym_http_server.glob_val.enter_critical_section()
                 # it s a trainer that has sent us stuff we are intereted in
                 # lets check the history to understand if we can trust him
                 environment_name = self.client.get_instance_name().decode('utf-8')
                 if environment_name in gym_http_server.glob_val.reverse_shared_d or current_id not in gym_http_server.glob_val.id_p2p or self.client.get_number_of_fitnesses() != gym_http_server.glob_val.id_p2p[current_id]['n_genomes']:
                     is_ok = False
-                    gym_http_server.glob_val.enter_critical_section()
                     gym_http_server.glob_val.close_environments(environment_name)
-                    gym_http_server.glob_val.exit_critical_section()
+                    
                 elif environment_name not in gym_http_server.glob_val.checking_states:
                     is_ok = False# not such environment identifier
                 else:
@@ -126,32 +125,51 @@ class Host:
                     for i in l:
                         l_rew.append(d[i])
                     self.client.set_fitnesses(l_rew)
-                    
                 if is_ok:
                     if self.client.we_do_care_about_this_trainer():
-                        l = gym_http_server.glob_val.checking_states[environment_name]['list_to_check']
-                        is_ok = self.client.comparing_history_is_ok(l,0.00001)# comparing the history
+                        we_care = True
+                        try:
+                            l = gym_http_server.glob_val.checking_states[environment_name]['list_to_check']
+                        except:
+                            l = []
+                        if l == []:
+                            is_ok = False
+                        else:
+                            is_ok = self.client.comparing_history_is_ok(l,0.00001)# comparing the history
                     gym_http_server.glob_val.checking_states.pop(environment_name, None)
-               
+                gym_http_server.glob_val.exit_critical_section()
+                
             if is_ok:# is ok as trainer
-                print('trainer is ok')
+                
                 if self.client.set_body(1, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index):# if is true, a generation run has been completed
+                    if current_id == None:
+                        current_id = self.client.get_identifier().decode('utf-8')
+                    
+                    current_id_index = self.client.get_index_value(current_id)
+                    
                     gen_run = self.neat.get_generation_iter()
                     if gen_run >= self.configuration_dict['generations']:
-                        print('training ended')
                         exit(0)
-                    gym_http_server.glob_val.generation = gen_run+1
                     gym_http_server.glob_val.enter_critical_section()
+                    gym_http_server.glob_val.generation = gen_run+1
+                    gym_http_server.glob_val.close_from_timeouts()
                     gym_http_server.glob_val.current_index = gym_http_server.glob_val.next_index
                     gym_http_server.glob_val.next_index = gym_http_server.glob_val.generate_indexing()
                     gym_http_server.glob_val.exit_critical_section()
                 else:
-                    print('not new generation')
+                    if current_id == None:
+                        current_id = self.client.get_identifier().decode('utf-8')
+                    
+                    current_id_index = self.client.get_index_value(current_id)
+                    if we_care:
+                        gym_http_server.glob_val.enter_critical_section()
+                        gym_http_server.glob_val.close_from_timeouts(id = current_id_index)
+                        gym_http_server.glob_val.exit_critical_section()
                 if current_id != None:
-                    gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes()}
+                    gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes(), 'index':current_id_index}
                 else:
                     current_id = self.client.get_identifier().decode('utf-8')
-                    gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes()}
+                    gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes(),'index':current_id_index}
             else:
                 if current_id != None:
                     if current_id in gym_http_server.glob_val.id_p2p:

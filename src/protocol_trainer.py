@@ -2,6 +2,7 @@ import ezclient
 import requests
 import time
 import json
+from datetime import datetime
 
 class Trainer:
     def __init__(self, gym_game_name, training_public_key, input_size, output_size, max_number_of_games, max_number_of_steps, threads):
@@ -29,9 +30,13 @@ class Trainer:
     
     def train(self):
         environment_name = None
+        last = datetime.now()
+        limit = 1200#20 minutes
         while(True):
             #  A LIMIT MUST BE ADDED
-            print('communicating')
+            current = datetime.now()
+            if (current-last).total_seconds() >= limit:
+                exit(1)
             # communication protocol is acting
             while(not self.client.is_disconnected()):
                 self.client.trainer_direct_main_loop()
@@ -41,6 +46,7 @@ class Trainer:
                 # adding request to server with http when was last time host connected
                 # then, if the current time - last time >= limits close this process (probably the host is not hosting anymore)
                 continue
+            
             #lets check if is ok what the host has sent us
             if not self.client.is_body_ok_for_trainer_neat():
                 exit(1)
@@ -86,6 +92,9 @@ class Trainer:
                     res = json.loads(res.content)
                 except:
                     exit(1)
+            if 'ok' in res:
+                last = datetime.now()
+                continue
             list_keys = list(res.keys())
             list_keys.sort()
             if n_genomes != len(list_keys):
@@ -156,3 +165,4 @@ class Trainer:
                         list_rewards[i] = res[list_keys[i]][1]
                         game_done[i] = res[list_keys[i]][2]
             self.client.set_values_back_in_body()
+            last = datetime.now()
