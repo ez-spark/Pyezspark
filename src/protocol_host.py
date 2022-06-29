@@ -31,6 +31,7 @@ class Host:
     def alone_training(self):
         env = gym.make(self.gym_game_name)
         for i in range(self.alone_training_iterations):
+            self.neat.set_generation_iter(i)
             number_genomes = self.neat.get_number_of_genomes()
             self.neat.reset_fitnesses()
             for j in range(number_genomes):
@@ -62,6 +63,7 @@ class Host:
                     if n_games >= self.max_number_of_games:
                         break
             self.neat.generation_run()
+            
         self.neat.reset_fitnesses()
     
     def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000, timeout=20):

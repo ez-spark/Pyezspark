@@ -270,7 +270,8 @@ class GlobalVal:
         self.checking_states.pop(environment,None)
         if environment in self.reverse_shared_d:
             id = self.reverse_shared_d[environment][0]
-            for i in self.reverse_shared_d:
+            l = list(self.reverse_shared_d.keys())
+            for i in l:
                 if self.reverse_shared_d[i][0] == id:
                     envs.env_close(i)
                     self.reverse_shared_d.pop(i,None)
