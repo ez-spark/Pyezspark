@@ -33,7 +33,6 @@ class Trainer:
         last = datetime.now()
         limit = 1200#20 minutes
         while(True):
-            #  A LIMIT MUST BE ADDED
             current = datetime.now()
             if (current-last).total_seconds() >= limit:
                 exit(1)

@@ -497,11 +497,10 @@ def handle_invalid_usage(error):
     response.status_code = error.status_code
     return response
 
-
-########## API route definitions ##########
+   
 @app.route('/v1/envs/', methods=['POST'])
 def env_create():
-    #print('creating environments')
+    print('creating environments')
     """
     Create an instance of the specified environment
 
@@ -519,6 +518,7 @@ def env_create():
         ret = {}
         ret['full'] = True
         return jsonify(ret)
+    print(request.data)
     env_id = get_required_param(request.get_json(), 'env_id')
     n_instances = get_required_param(request.get_json(), 'n_instances')
     identifier = get_required_param(request.get_json(),'identifier')
@@ -604,7 +604,14 @@ def multi_step():
     glob_val.exit_critical_section()
     return jsonify(response)
 
-
+@app.after_request
+def add_header(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Credentials'] = True
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept'
+    response.headers['Access-Control-Allow-Methods'] ='GET, POST, PUT, PATCH'
+    return response
+    
 class ServerRun(threading.Thread):
     def __init__(self, ip, port):
         threading.Thread.__init__(self)
