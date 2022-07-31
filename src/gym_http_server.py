@@ -500,7 +500,6 @@ def handle_invalid_usage(error):
    
 @app.route('/v1/envs/', methods=['POST'])
 def env_create():
-    print('creating environments')
     """
     Create an instance of the specified environment
 
@@ -513,18 +512,19 @@ def env_create():
     """
     glob_val.enter_critical_section()
     if glob_val.current_trainers >= glob_val.max_number_trainers:
-        #print('we are full')
         glob_val.exit_critical_section()
         ret = {}
         ret['full'] = True
         return jsonify(ret)
-    print(request.data)
-    env_id = get_required_param(request.get_json(), 'env_id')
-    n_instances = get_required_param(request.get_json(), 'n_instances')
-    identifier = get_required_param(request.get_json(),'identifier')
+    js = request.get_json()
+    if js is None:
+        js = json.loads(request.data)
+        
+    env_id = get_required_param(js, 'env_id')
+    n_instances = get_required_param(js, 'n_instances')
+    identifier = get_required_param(js,'identifier')
     seed = None
     if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
-        #print('not ok request on creating environment')
         glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
@@ -559,9 +559,12 @@ def multi_step():
     - instance1:[obs, reward, done, rest_obs]
     - ...
     """
-    json = request.get_json()
+    js = request.get_json()
+   
+    if js is None:
+        js = json.loads(request.data)
     response = {}
-    keys = list(json.keys())
+    keys = list(js.keys())
     keys.sort()
     glob_val.enter_critical_section()
     if not glob_val.steps_check(keys):
@@ -576,15 +579,15 @@ def multi_step():
     l4 = []
     l5 = []
     l6 = []
-    for key in json:
+    for key in js:
         l5.append(key)
-        l6.append(float(json[key]))
+        l6.append(float(js[key]))
         if glob_val.reverse_shared_d[key][4]:
             obs_jsonable = envs.reset(key)
             reward = 0
             done = False
         else:
-            obs_jsonable, reward, done, info = envs.step(key, json[key], False)
+            obs_jsonable, reward, done, info = envs.step(key, js[key], False)
         response[key] = [obs_jsonable, reward, done]
         l1.append(key)
         l2.append(obs_jsonable)
@@ -592,15 +595,17 @@ def multi_step():
         l4.append(done)
     l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
     glob_val.enter_critical_section()
-    try:
-        glob_val.add_actions(l5,l6)
-        glob_val.update_steps(l1,l4,l2,l3)
-        glob_val.shutdown_envs(l1)
+    #try:
+    glob_val.add_actions(l5,l6)
+    glob_val.update_steps(l1,l4,l2,l3)
+    glob_val.shutdown_envs(l1)
+    '''
     except:
         ret = {}
         ret['ok'] = False
         glob_val.exit_critical_section()
         return jsonify(ret)
+    '''
     glob_val.exit_critical_section()
     return jsonify(response)
 
@@ -635,7 +640,7 @@ class timeoutRun(threading.Thread):
             l = list(glob_val.timeout_d.keys())
             for i in l:
                 if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already clos only the checking states are still active
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 10*glob_val.timeout_d[i]['seconds_timeout']:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 30*glob_val.timeout_d[i]['seconds_timeout']:
                         glob_val.checking_states.pop(glob_val.timeout_d[i]['reverse_shared_d'][0],None)
                         glob_val.timeout_d.pop(i,None)
                 elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:

@@ -70,7 +70,13 @@ class Host:
         if genomes_per_client <= 0 or max_number_of_trainers <= 0:
             print("Error, genomes per client can't be <= 0, same for max number of trainers")
             exit(1)
+            
+            
         link = 'http://'+ip+':'+str(port) #it should be the link of localtunnel
+        
+        
+        # checking with http api if this training already exists , in that case wait 10 secs and re ask
+        # if this training keeps existing for more than 5 minutes close the process
         
         # setting import parameters
         gym_http_server.glob_val.max_number_of_trainers = max_number_of_trainers
@@ -108,7 +114,6 @@ class Host:
             if self.client.trainer_has_identifier():
                 
                 current_id = self.client.get_identifier().decode('utf-8')
-                print(current_id)
                 gym_http_server.glob_val.enter_critical_section()
                 # it s a trainer that has sent us stuff we are intereted in
                 # lets check the history to understand if we can trust him
@@ -118,6 +123,7 @@ class Host:
                     gym_http_server.glob_val.close_environments(environment_name)
                     
                 elif environment_name not in gym_http_server.glob_val.checking_states:
+                    
                     is_ok = False# not such environment identifier
                 else:
                     d = gym_http_server.glob_val.checking_states[environment_name]['rewards']

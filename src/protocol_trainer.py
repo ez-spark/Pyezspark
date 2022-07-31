@@ -22,7 +22,9 @@ class Trainer:
         self.environment_creation_endpoint = '/v1/envs/'
         self.next_step_endpoint = '/v1/envs/step/'
         self.headers = {'Content-type': 'application/json'}
-        
+    
+    #calling connect with try except after the except re try, but first we ask through http 
+    # api if that training exists
     def connect(self, remote_ip, remote_port):
         self.remote_ip = remote_ip
         self.remote_port = remote_port
