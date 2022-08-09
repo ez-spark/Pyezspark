@@ -110,6 +110,7 @@ class Host:
             is_ok = True
             current_id = None
             we_care = False
+            should_not_disconnect = False
             # if we did already assigned an identifier to him:
             if self.client.trainer_has_identifier():
                 
@@ -123,8 +124,7 @@ class Host:
                     gym_http_server.glob_val.close_environments(environment_name)
                     
                 elif environment_name not in gym_http_server.glob_val.checking_states:
-                    
-                    is_ok = False# not such environment identifier
+                    should_not_disconnect = True
                 else:
                     d = gym_http_server.glob_val.checking_states[environment_name]['rewards']
                     l = list(d.keys())
@@ -133,7 +133,7 @@ class Host:
                     for i in l:
                         l_rew.append(d[i])
                     self.client.set_fitnesses(l_rew)
-                if is_ok:
+                if is_ok and not should_not_disconnect:
                     if self.client.we_do_care_about_this_trainer():
                         we_care = True
                         try:

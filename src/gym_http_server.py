@@ -595,17 +595,17 @@ def multi_step():
         l4.append(done)
     l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
     glob_val.enter_critical_section()
-    #try:
-    glob_val.add_actions(l5,l6)
-    glob_val.update_steps(l1,l4,l2,l3)
-    glob_val.shutdown_envs(l1)
-    '''
+    try:
+        glob_val.add_actions(l5,l6)
+        glob_val.update_steps(l1,l4,l2,l3)
+        glob_val.shutdown_envs(l1)
+    
     except:
         ret = {}
         ret['ok'] = False
         glob_val.exit_critical_section()
         return jsonify(ret)
-    '''
+    
     glob_val.exit_critical_section()
     return jsonify(response)
 
@@ -639,8 +639,8 @@ class timeoutRun(threading.Thread):
             date = datetime.now()
             l = list(glob_val.timeout_d.keys())
             for i in l:
-                if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already clos only the checking states are still active
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 30*glob_val.timeout_d[i]['seconds_timeout']:
+                if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 300*glob_val.timeout_d[i]['seconds_timeout']:
                         glob_val.checking_states.pop(glob_val.timeout_d[i]['reverse_shared_d'][0],None)
                         glob_val.timeout_d.pop(i,None)
                 elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
