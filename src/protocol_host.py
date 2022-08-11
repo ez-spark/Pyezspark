@@ -66,7 +66,7 @@ class Host:
             
         self.neat.reset_fitnesses()
     
-    def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000, timeout=20):
+    def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000, timeout=3):
         if genomes_per_client <= 0 or max_number_of_trainers <= 0:
             print("Error, genomes per client can't be <= 0, same for max number of trainers")
             exit(1)
@@ -106,26 +106,37 @@ class Host:
             if self.client.got_broken_pipe():
                 self.client.connect(remote_ip, remote_port, genomes_per_client = genomes_per_client)
                 continue
+                
+            #blocking the timeouts that must talk with the p2p
+            gym_http_server.glob_val.enter_critical_section()
+            gym_http_server.glob_val.timeout_flag = True
+            gym_http_server.glob_val.exit_critical_section()
+            
             # we are here, a trainer is communicating with us
             is_ok = True
             current_id = None
             we_care = False
-            should_not_disconnect = False
+            flag2 = False
             # if we did already assigned an identifier to him:
             if self.client.trainer_has_identifier():
-                
                 current_id = self.client.get_identifier().decode('utf-8')
                 gym_http_server.glob_val.enter_critical_section()
-                # it s a trainer that has sent us stuff we are intereted in
-                # lets check the history to understand if we can trust him
                 environment_name = self.client.get_instance_name().decode('utf-8')
+                
+                
+                # if environment is in reverse: we didn't finished the training for this environment name. or if the p2p id or the number of fitnesses do not match, it is malicious
+                # for the p2p id case it could more likely happen during http requests, in those case the trainer will reset itself and restart from scratch without conencting with us
+                # but if we reach this point either we were unlucky and we will close and restart the connection, or is really malicious
                 if environment_name in gym_http_server.glob_val.reverse_shared_d or current_id not in gym_http_server.glob_val.id_p2p or self.client.get_number_of_fitnesses() != gym_http_server.glob_val.id_p2p[current_id]['n_genomes']:
                     is_ok = False
                     gym_http_server.glob_val.close_environments(environment_name)
-                    
+                
+                # this environment name could have been closed by timeout, ok do not disconnect lets just assign new genomes
+                # the other case is when it is malicious, well communicate genomes to him anyway
                 elif environment_name not in gym_http_server.glob_val.checking_states:
-                    should_not_disconnect = True
+                    flag2 = True
                 else:
+                    # ok assign the right fitnesses
                     d = gym_http_server.glob_val.checking_states[environment_name]['rewards']
                     l = list(d.keys())
                     l.sort()
@@ -133,7 +144,10 @@ class Host:
                     for i in l:
                         l_rew.append(d[i])
                     self.client.set_fitnesses(l_rew)
-                if is_ok and not should_not_disconnect:
+                
+                # if it is not malicious, or we could care about this
+                if is_ok and not flag2:
+                    #lets first surely check if we really care
                     if self.client.we_do_care_about_this_trainer():
                         we_care = True
                         try:
@@ -147,8 +161,7 @@ class Host:
                     gym_http_server.glob_val.checking_states.pop(environment_name, None)
                 gym_http_server.glob_val.exit_critical_section()
                 
-            if is_ok:# is ok as trainer
-                
+            if is_ok:# is ok as trainer, or is malicious but did not relly hurted us, or is ok but timeout timed out it
                 if self.client.set_body(1, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index):# if is true, a generation run has been completed
                     if current_id == None:
                         current_id = self.client.get_identifier().decode('utf-8')
@@ -173,13 +186,19 @@ class Host:
                         gym_http_server.glob_val.enter_critical_section()
                         gym_http_server.glob_val.close_from_timeouts(id = current_id_index)
                         gym_http_server.glob_val.exit_critical_section()
-                if current_id != None:
-                    gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes(), 'index':current_id_index}
-                else:
+                if current_id == None:
                     current_id = self.client.get_identifier().decode('utf-8')
-                    gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes(),'index':current_id_index}
+                gym_http_server.glob_val.enter_critical_section()
+                gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes(),'index':current_id_index}
+                gym_http_server.glob_val.exit_critical_section()
             else:
                 if current_id != None:
                     if current_id in gym_http_server.glob_val.id_p2p:
+                        gym_http_server.glob_val.enter_critical_section()
                         gym_http_server.glob_val.id_p2p.pop(current_id, None)
+                        gym_http_server.glob_val.exit_critical_section()
                 self.client.set_body(0, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index)# we set the body to tell the server to close this trainer
+            # unlocking timeouts
+            gym_http_server.glob_val.enter_critical_section()
+            gym_http_server.glob_val.timeout_flag = False
+            gym_http_server.glob_val.exit_critical_section()

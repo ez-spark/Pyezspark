@@ -48,6 +48,7 @@ class GlobalVal:
         self.id_p2p = {}#each p2p id is associated to n_genomes
         self.shared_d = {}
         self.timeout_d = {}#handled by other thread
+        self.timeout_flag = False;
         '''
         share_d struct:
         (key, value) = (random id,{'ids':[list_of_environment_ids], 'interactions':integer})
@@ -294,7 +295,7 @@ class GlobalVal:
             l = list(self.timeout_d.keys())
             for i in l:
                 if self.timeout_d[i]['current_id_index'] == id:
-                    if self.timeout_d[i]['reverse_shared_d'][0] in self.checking_states and i not in self.shared_d:#has been already clos only the checking states are still active
+                    if self.timeout_d[i]['reverse_shared_d'][0] in self.checking_states and i not in self.shared_d:#has been already closed only the checking states are still active
                        self.checking_states.pop(self.timeout_d[i]['reverse_shared_d'][0],None)
                        self.timeout_d.pop(i,None)
                     elif self.timeout_d[i]['reverse_shared_d'][0] not in self.checking_states and i not in self.shared_d:
@@ -632,28 +633,39 @@ class timeoutRun(threading.Thread):
     def __init__(self, timeout):
         threading.Thread.__init__(self)
         self.timeout = timeout
+        self.timeout_dict = {}
     def run(self):
         while True:
             time.sleep(self.timeout)
+            
+            #polling to the server
+            
             glob_val.enter_critical_section()
             date = datetime.now()
             l = list(glob_val.timeout_d.keys())
             for i in l:
                 if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 300*glob_val.timeout_d[i]['seconds_timeout']:
-                        glob_val.checking_states.pop(glob_val.timeout_d[i]['reverse_shared_d'][0],None)
-                        glob_val.timeout_d.pop(i,None)
+                    if glob_val.timeout_flag:
+                        self.timeout_dict[i] = (date-glob_val.timeout_d[i]['last_interaction']).total_seconds()
+                    else:
+                        if i in self.timeout_dict:
+                            glob_val.timeout_d[i]['last_interaction'] = date - timedelta(seconds=self.timeout_dict[i])
+                        if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout']:
+                            glob_val.checking_states.pop(glob_val.timeout_d[i]['reverse_shared_d'][0],None)
+                            glob_val.timeout_d.pop(i,None)
                 elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
                     glob_val.timeout_d.pop(i,None)
                 else:
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= glob_val.timeout_d[i]['seconds_timeout']:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 3*glob_val.timeout_d[i]['seconds_timeout']:
                         glob_val.close_environments(glob_val.timeout_d[i]['reverse_shared_d'][0])
+            if not glob_val.timeout_flag:
+                self.timeout_dict = {}
             glob_val.exit_critical_section()
 
 def init_gym_server(ip = '127.0.0.1', port = 5000):
     starting_thread = ServerRun(ip,port)
     starting_thread.start()
 
-def init_environments_timeout(timeout = 20):
+def init_environments_timeout(timeout = 3):
     starting_thread = timeoutRun(timeout)
     starting_thread.start()
