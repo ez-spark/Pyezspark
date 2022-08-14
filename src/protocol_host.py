@@ -1,6 +1,24 @@
 from . import gym_http_server
 import gym
 import ezclient
+import threading
+from .pylocaltunnel import lt as localtunnel
+import re
+
+class localTunnelRun(threading.Thread):
+    def __init__(self, ip, port):
+        threading.Thread.__init__(self)
+        self.ip = ip
+        self.port = port
+        self.url = localtunnel.get_localtunnel_url()
+    
+    def get_url(self):
+        return self.url
+        
+    def run(self):
+        localtunnel.main(self.ip, self.port, self.url)
+
+
 
 class Host:
     def __init__(self, gym_game_name, alone_training_iterations, configuration_dict,
@@ -70,9 +88,16 @@ class Host:
         if genomes_per_client <= 0 or max_number_of_trainers <= 0:
             print("Error, genomes per client can't be <= 0, same for max number of trainers")
             exit(1)
-            
-            
-        link = 'http://'+ip+':'+str(port) #it should be the link of localtunnel
+           
+        starting_thread = localTunnelRun(ip,port)
+        link = starting_thread.get_url()
+        idx = [c.start() for c in re.finditer(':', link)][1]
+        link = link[:idx]
+        print('go to: '+link+'/status/'+self.training_private_key)
+        print('to get the current status of your training')
+        starting_thread.start()
+         
+        #link = 'http://'+ip+':'+str(port) #it should be the link of localtunnel
         
         
         # checking with http api if this training already exists , in that case wait 10 secs and re ask
@@ -84,7 +109,7 @@ class Host:
         gym_http_server.glob_val.max_number_of_steps = self.max_number_of_steps
         gym_http_server.glob_val.max_number_of_games = self.max_number_of_games
         # starting the gym server on another thread
-        gym_http_server.init_gym_server(ip,port)
+        gym_http_server.init_gym_server(self.training_private_key,ip,port)
         # starting the timeout for the environments
         gym_http_server.init_environments_timeout(timeout)
         
@@ -94,6 +119,11 @@ class Host:
         self.client.connect(remote_ip,remote_port, genomes_per_client = genomes_per_client)
         self.neat.set_generation_iter(self.alone_training_iterations)
         gym_http_server.glob_val.generation = self.alone_training_iterations+1
+        generation = self.alone_training_iterations
+        gym_http_server.glob_val.enter_critical_section()
+        gym_http_server.glob_val.set_generation(generation)
+        gym_http_server.glob_val.set_genomes(self.neat.get_number_of_genomes())
+        gym_http_server.glob_val.exit_critical_section()
         while(True):
             # keep the communication active
             
@@ -163,6 +193,13 @@ class Host:
                 
             if is_ok:# is ok as trainer, or is malicious but did not relly hurted us, or is ok but timeout timed out it
                 if self.client.set_body(1, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index):# if is true, a generation run has been completed
+                    #setting some informations for the http retrivieng information host side
+                    generation+=1
+                    gym_http_server.glob_val.enter_critical_section()
+                    gym_http_server.glob_val.set_generation(generation)
+                    gym_http_server.glob_val.set_genomes(self.neat.get_number_of_genomes())
+                    gym_http_server.glob_val.exit_critical_section()
+                    
                     if current_id == None:
                         current_id = self.client.get_identifier().decode('utf-8')
                     

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 import threading, time, random
 import uuid
 import gym
@@ -49,8 +49,11 @@ class GlobalVal:
         self.shared_d = {}
         self.timeout_d = {}#handled by other thread
         self.timeout_flag = False;
+        self.training_private_key = None
+        self.generation = 0
+        self.total_number_of_genomes = 0
         '''
-        share_d struct:
+        shared_d struct:
         (key, value) = (random id,{'ids':[list_of_environment_ids], 'interactions':integer})
         '''
         self.reverse_shared_d = {}
@@ -61,12 +64,21 @@ class GlobalVal:
         self.checking_states = {}
         '''
         checking_states struct:
-        (key, value) = (environment_id[0] from the list of share_d, {'index':0, 'associated_id':id, 'current_index':self.current_index-1,'index_got':self.current_index, 'length': n, 'list_to_check':[]})
+        (key, value) = (environment_id[0] from the list of shared_d, {'index':0, 'associated_id':id, 'current_index':self.current_index-1,'index_got':self.current_index, 'length': n, 'list_to_check':[]})
         '''
         self.current_trainers = 0
         self.current_index = self.generate_indexing()
         self.next_index = self.generate_indexing()
     
+    def set_private_key(self,private_key):
+        self.training_private_key = private_key
+    
+    def set_generation(self,generation):
+        self.generation = generation
+    
+    def set_genomes(self,genomes):
+        self.total_number_of_genomes = genomes
+        
     def generate_indexing(self):
         return 1 + int(random.random()*self.max_number_genomes_per_client/2)
     
@@ -492,6 +504,45 @@ def get_optional_param(json, param, default):
         value = default
     return value
 
+
+def generateTable():
+    html_tag = '<html>'
+    head_tag = '<head>'
+    css_link = '<link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.min.css">'
+    style = '<style> body { font-family: "lato", sans-serif; } .container { max-width: 1000px; margin-left: auto; margin-right: auto; padding-left: 10px; padding-right: 10px; } h2 { font-size: 26px; margin: 20px 0; text-align: center; } h2 small { font-size: 0.5em; } .responsive-table li { border-radius: 3px; padding: 25px 30px; display: flex; justify-content: space-between; margin-bottom: 25px; } .responsive-table .table-header { background-color: #95A5A6; font-size: 14px; text-transform: uppercase; letter-spacing: 0.03em; } .responsive-table .table-row { background-color: #ffffff; box-shadow: 0px 0px 9px 0px rgba(0, 0, 0, 0.1); } .responsive-table .col-1 { flex-basis: 30%; } .responsive-table .col-2 { flex-basis: 30%; } .responsive-table .col-3 { flex-basis: 10%; } .responsive-table .col-4 { flex-basis: 10%; } .responsive-table .col-5 { flex-basis: 10%; } .responsive-table .col-6 { flex-basis: 10%; } @media all and (max-width: 767px) { .responsive-table .table-header { display: none; } .responsive-table li { display: block; } .responsive-table .col { flex-basis: 100%; } .responsive-table .col { display: flex; padding: 10px 0; } .responsive-table .col:before { color: #6C7A89; padding-right: 10px; content: attr(data-label); flex-basis: 50%; text-align: right; } } </style> <script> window.console = window.console || function(t) {}; </script> <script> if (document.location.search.match(/type=embed/gi)) { window.parent.postMessage("resize", "*"); } </script>'
+    end_head_tag = '</head>'
+    body = '<body translate="no">'
+    title = '<div class="container"><h2>'+glob_val.training_private_key+' Training</h2>'
+    number_of_trainers = '<div><b>Number of Current Trainers: </b>'+str(glob_val.current_trainers)+'</div>'
+    number_of_trainers = '<div><b>Number of Current Trainers: </b>'+str(glob_val.current_trainers)+'</div>'
+    generation = '<div><b>Generation: </b>'+str(glob_val.generation)+'</div>'
+    total_genomes = '<div><b>Number of genomes for this generation: </b>'+str(glob_val.total_number_of_genomes)+'</div>'
+    table_tag = '<ul class="responsive-table">'
+    table_head = '<li class="table-header"><div class="col col-1">P2P id</div><div class="col col-2">Gym Id</div><div class="col col-3">N Genomes</div><div class="col col-4">Ended Games</div><div class="col col-5">Games Playing</div><div class="col col-6">Genome index</div></li>'
+    table_body = ''
+    l = list(glob_val.timeout_d.keys())
+    for i in l:
+        if glob_val.timeout_d[i]['checking_states'] in glob_val.checking_states: 
+            gym_id = i
+            p2p_id = glob_val.timeout_d[i]['current_id']
+            n_genomes = glob_val.checking_states[glob_val.timeout_d[i]['checking_states']]['length']
+            ended_games = n_genomes
+            games_playing = 0
+            gym_id = gym_id.replace('<','')
+            gym_id = gym_id.replace('>','')
+            p2p_id = gym_id.replace('>','')
+            p2p_id = gym_id.replace('<','')
+            
+            if i in glob_val.shared_d:
+                games_playing = len(glob_val.shared_d[i]['ids'])
+                ended_games = n_genomes-games_playing
+            genome_index = glob_val.timeout_d[i]['current_id_index']
+            table_body+='<li class="table-row"><div class="col col-1" data-label="P2P id">'+str(p2p_id)+'</div><div class="col col-2" data-label="Gym Id">'+str(gym_id)+'</div><div class="col col-3" data-label="N Genomes">'+str(n_genomes)+'</div><div class="col col-4" data-label="Ended Games">'+str(ended_games)+'</div><div class="col col-5" data-label="Games Playing">'+str(games_playing)+'</div><div class="col col-6" data-label="Genome index">'+str(genome_index)+'</div></li>'
+    end_table_tag = '</ul></div>'
+    end_body_tag = '</body>'
+    end_html_tag = '</html>'
+    return html_tag+head_tag+css_link+style+end_head_tag+body+title+number_of_trainers+generation+total_genomes+table_tag+table_head+table_body+end_table_tag+end_body_tag+end_html_tag
+
 @app.errorhandler(InvalidUsage)
 def handle_invalid_usage(error):
     response = jsonify(error.to_dict())
@@ -499,7 +550,7 @@ def handle_invalid_usage(error):
     return response
 
    
-@app.route('/v1/envs/', methods=['POST'])
+@app.route('/v1/envs/', methods=['POST', 'OPTIONS'])
 def env_create():
     """
     Create an instance of the specified environment
@@ -511,43 +562,53 @@ def env_create():
     Returns:
         - instance_id: {obs, reward}, ...
     """
-    glob_val.enter_critical_section()
-    if glob_val.current_trainers >= glob_val.max_number_trainers:
-        glob_val.exit_critical_section()
+    if request.method == 'POST':
+        glob_val.enter_critical_section()
+        if glob_val.current_trainers >= glob_val.max_number_trainers:
+            glob_val.exit_critical_section()
+            ret = {}
+            ret['full'] = True
+            return jsonify(ret)
+        js = request.get_json()
+        if js is None:
+            try:
+                js = json.loads(request.data)
+            except:
+                ret = {}
+                ret['ok'] = False
+                return jsonify(ret)
+                
+        env_id = get_required_param(js, 'env_id')
+        n_instances = get_required_param(js, 'n_instances')
+        identifier = get_required_param(js,'identifier')
+        seed = None
+        if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
+            glob_val.exit_critical_section()
+            ret = {}
+            ret['ok'] = False
+            return jsonify(ret)
         ret = {}
-        ret['full'] = True
-        return jsonify(ret)
-    js = request.get_json()
-    if js is None:
-        js = json.loads(request.data)
-        
-    env_id = get_required_param(js, 'env_id')
-    n_instances = get_required_param(js, 'n_instances')
-    identifier = get_required_param(js,'identifier')
-    seed = None
-    if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
+        l1 = []
+        l2 =  []
+        l3 = []
+        for i in range(n_instances):
+            instance = envs.create(env_id, seed)
+            l1.append(instance)
+            ret[instance] = {'obs': envs.reset(l1[i]),'reward': 0}
+            l2.append(ret[instance]['obs'])
+            l3.append(0)
+        l1, l2, l3 = zip(*sorted(zip(l1, l2, l3)))
+        glob_val.hash_enviroments(l1,l2,l3, identifier)
+        glob_val.shutdown_envs(l1)
         glob_val.exit_critical_section()
+        
+        return jsonify(ret)
+    else:
         ret = {}
         ret['ok'] = False
         return jsonify(ret)
-    ret = {}
-    l1 = []
-    l2 =  []
-    l3 = []
-    for i in range(n_instances):
-        instance = envs.create(env_id, seed)
-        l1.append(instance)
-        ret[instance] = {'obs': envs.reset(l1[i]),'reward': 0}
-        l2.append(ret[instance]['obs'])
-        l3.append(0)
-    l1, l2, l3 = zip(*sorted(zip(l1, l2, l3)))
-    glob_val.hash_enviroments(l1,l2,l3, identifier)
-    glob_val.shutdown_envs(l1)
-    glob_val.exit_critical_section()
-    
-    return jsonify(ret)
 
-@app.route('/v1/envs/step/', methods=['POST'])#multiple step request
+@app.route('/v1/envs/step/', methods=['POST', 'OPTIONS'])#multiple step request
 def multi_step():
     """ 
     request a step
@@ -560,61 +621,97 @@ def multi_step():
     - instance1:[obs, reward, done, rest_obs]
     - ...
     """
-    js = request.get_json()
-   
-    if js is None:
-        js = json.loads(request.data)
-    response = {}
-    keys = list(js.keys())
-    keys.sort()
-    glob_val.enter_critical_section()
-    if not glob_val.steps_check(keys):
+    if request.method == 'POST':
+        js = request.get_json()
+       
+        if js is None:
+            try:
+                js = json.loads(request.data)
+            except:
+                ret = {}
+                ret['ok'] = False
+                return jsonify(ret)
+        response = {}
+        keys = list(js.keys())
+        keys.sort()
+        glob_val.enter_critical_section()
+        if not glob_val.steps_check(keys):
+            glob_val.exit_critical_section()
+            ret = {}
+            ret['ok'] = False
+            return jsonify(ret)
         glob_val.exit_critical_section()
-        ret = {}
-        ret['ok'] = False
-        return jsonify(ret)
-    glob_val.exit_critical_section()
-    l1 = []
-    l2 = []
-    l3 = []
-    l4 = []
-    l5 = []
-    l6 = []
-    for key in js:
-        l5.append(key)
-        l6.append(float(js[key]))
-        if glob_val.reverse_shared_d[key][4]:
-            obs_jsonable = envs.reset(key)
-            reward = 0
-            done = False
-        else:
-            obs_jsonable, reward, done, info = envs.step(key, js[key], False)
-        response[key] = [obs_jsonable, reward, done]
-        l1.append(key)
-        l2.append(obs_jsonable)
-        l3.append(reward)
-        l4.append(done)
-    l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
-    glob_val.enter_critical_section()
-    try:
-        glob_val.add_actions(l5,l6)
-        glob_val.update_steps(l1,l4,l2,l3)
-        glob_val.shutdown_envs(l1)
-    
-    except:
-        ret = {}
-        ret['ok'] = False
+        try:
+            l1 = []
+            l2 = []
+            l3 = []
+            l4 = []
+            l5 = []
+            l6 = []
+            for key in js:
+                l5.append(key)
+                l6.append(float(js[key]))
+                if glob_val.reverse_shared_d[key][4]:
+                    obs_jsonable = envs.reset(key)
+                    reward = 0
+                    done = False
+                else:
+                    obs_jsonable, reward, done, info = envs.step(key, js[key], False)
+                response[key] = [obs_jsonable, reward, done]
+                l1.append(key)
+                l2.append(obs_jsonable)
+                l3.append(reward)
+                l4.append(done)
+            l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
+        except:
+            ret = {}
+            ret['ok'] = False
+            return jsonify(ret)
+            
+        glob_val.enter_critical_section()
+        try:
+            glob_val.add_actions(l5,l6)
+            glob_val.update_steps(l1,l4,l2,l3)
+            glob_val.shutdown_envs(l1)
+        
+        except:
+            ret = {}
+            ret['ok'] = False
+            glob_val.exit_critical_section()
+            return jsonify(ret)
+        
         glob_val.exit_critical_section()
+        return jsonify(response)
+    else:
+        ret = {}
+        ret['ok'] = True
         return jsonify(ret)
+
+
+@app.route('/status/css/style.css', methods=['GET'])
+def get_css():
+    css = 'body { font-family: \'lato\', sans-serif; } .container { max-width: 1000px; margin-left: auto; margin-right: auto; padding-left: 10px; padding-right: 10px; } h2 { font-size: 26px; margin: 20px 0; text-align: center; small { font-size: 0.5em; } } .responsive-table { li { border-radius: 3px; padding: 25px 30px; display: flex; justify-content: space-between; margin-bottom: 25px; } .table-header { background-color: #95A5A6; font-size: 14px; text-transform: uppercase; letter-spacing: 0.03em; } .table-row { background-color: #ffffff; box-shadow: 0px 0px 9px 0px rgba(0,0,0,0.1); } .col-1 { flex-basis: 30%; } .col-2 { flex-basis: 30%; } .col-3 { flex-basis: 10%; } .col-4 { flex-basis: 10%; } .col-5 { flex-basis: 10%; }  .col-6 { flex-basis: 10%; } @media all and (max-width: 767px) { .table-header { display: none; } .table-row{ } li { display: block; } .col { flex-basis: 100%; } .col { display: flex; padding: 10px 0; &:before { color: #6C7A89; padding-right: 10px; content: attr(data-label); flex-basis: 50%; text-align: right; } } } }'
+    return css, 200, {'Content-Type': 'text/css; charset=utf-8'}
     
+@app.route('/status/<string:training_private_key>', methods=['GET'])
+def get_status(training_private_key):
+    if training_private_key == glob_val.training_private_key:
+        glob_val.enter_critical_section()
+        s = generateTable()
+        glob_val.exit_critical_section()
+        return generateTable()
+    ret = {}
+    ret['ok'] = False
     glob_val.exit_critical_section()
-    return jsonify(response)
+    return jsonify(ret)
+
+
 
 @app.after_request
 def add_header(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Credentials'] = True
-    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, User-Agent'
     response.headers['Access-Control-Allow-Methods'] ='GET, POST, PUT, PATCH'
     return response
     
@@ -662,7 +759,8 @@ class timeoutRun(threading.Thread):
                 self.timeout_dict = {}
             glob_val.exit_critical_section()
 
-def init_gym_server(ip = '127.0.0.1', port = 5000):
+def init_gym_server(private_key,ip = '127.0.0.1', port = 5000):
+    glob_val.set_private_key(private_key)
     starting_thread = ServerRun(ip,port)
     starting_thread.start()
 
