@@ -10,6 +10,7 @@ import json
 import string
 import logging
 from datetime import datetime
+import requests
 
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.ERROR)
@@ -25,7 +26,7 @@ def flat_state(vector):
         return v
     return None
 
-#init_all = 0
+init_all = 0
 
 ########## Globals that must be modified and shared by threads ##########
 class GlobalVal:
@@ -91,7 +92,7 @@ class GlobalVal:
     def generate_id(self,length):
         characters = string.ascii_letters + string.digits + string.punctuation
         id = ''.join(random.choice(characters) for i in range(length))
-        return id
+        return id.replace("'",",").replace('"','!')
     
     def create_environments_is_ok(self, n_instances):
         if n_instances < 1 or n_instances > self.max_number_genomes_per_client:
@@ -118,17 +119,12 @@ class GlobalVal:
                     # remember we must record also the actions given back
                     # and this will always happen!
                     if self.checking_states[list_of_state_ids[i]]['index'] == self.checking_states[list_of_state_ids[i]]['current_index']:
-                        #print('n: '+str(n))
-                        #print('index: '+str(self.checking_states[list_of_state_ids[i]]['index']))
-                        #print('index got: '+str(self.checking_states[list_of_state_ids[i]]['current_index']))
                         l = flat_state(states[j])
                         for kk in l:
                             self.checking_states[list_of_state_ids[i]]['list_to_check'].append(kk)
-                        #print(st)
                         self.checking_states[list_of_state_ids[i]]['list_to_check'].append(reward[j])
                         self.checking_states[list_of_state_ids[i]]['current_index']+=self.checking_states[list_of_state_ids[i]]['index_got']
                         self.checking_states[list_of_state_ids[i]]['current_index'] = self.checking_states[list_of_state_ids[i]]['current_index']%self.checking_states[list_of_state_ids[i]]['length']
-                        #print('length: '+str(len(self.checking_states[list_of_state_ids[i]]['list_to_check'])))
                         
                     self.checking_states[list_of_state_ids[i]]['index']+=1
                     self.checking_states[list_of_state_ids[i]]['index'] = self.checking_states[list_of_state_ids[i]]['index']%self.checking_states[list_of_state_ids[i]]['length']
@@ -136,7 +132,6 @@ class GlobalVal:
         return False
     # the history take into account also the actions given back             
     def add_actions(self, list_of_environments_id, actions):
-        #return
         list_of_environments_id, actions = zip(*sorted(zip(list_of_environments_id, actions)))
         n = len(list_of_environments_id)
         id = ''
@@ -230,11 +225,10 @@ class GlobalVal:
         flag = False
         for i in self.timeout_d:
             for j in self.timeout_d[i]['reverse_shared_d']:
+                
                 if j in list_of_environments_id:
                     self.timeout_d[i]['last_interaction'] = datetime.now()
                     flag = True
-                    break
-                else:
                     break
             if flag:
                 break
@@ -506,6 +500,8 @@ def get_optional_param(json, param, default):
 
 
 def generateTable():
+    timeout = '1000s'
+    date = datetime.now()
     html_tag = '<html>'
     head_tag = '<head>'
     css_link = '<link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/meyer-reset/2.0/reset.min.css">'
@@ -518,7 +514,7 @@ def generateTable():
     generation = '<div><b>Generation: </b>'+str(glob_val.generation)+'</div>'
     total_genomes = '<div><b>Number of genomes for this generation: </b>'+str(glob_val.total_number_of_genomes)+'</div>'
     table_tag = '<ul class="responsive-table">'
-    table_head = '<li class="table-header"><div class="col col-1">P2P id</div><div class="col col-2">Gym Id</div><div class="col col-3">N Genomes</div><div class="col col-4">Ended Games</div><div class="col col-5">Games Playing</div><div class="col col-6">Genome index</div></li>'
+    table_head = '<li class="table-header"><div class="col col-1">P2P id</div><div class="col col-2">Timeout</div><div class="col col-3">N Genomes</div><div class="col col-4">Ended Games</div><div class="col col-5">Games Playing</div><div class="col col-6">Genome index</div></li>'
     table_body = ''
     l = list(glob_val.timeout_d.keys())
     for i in l:
@@ -537,7 +533,26 @@ def generateTable():
                 games_playing = len(glob_val.shared_d[i]['ids'])
                 ended_games = n_genomes-games_playing
             genome_index = glob_val.timeout_d[i]['current_id_index']
-            table_body+='<li class="table-row"><div class="col col-1" data-label="P2P id">'+str(p2p_id)+'</div><div class="col col-2" data-label="Gym Id">'+str(gym_id)+'</div><div class="col col-3" data-label="N Genomes">'+str(n_genomes)+'</div><div class="col col-4" data-label="Ended Games">'+str(ended_games)+'</div><div class="col col-5" data-label="Games Playing">'+str(games_playing)+'</div><div class="col col-6" data-label="Genome index">'+str(genome_index)+'</div></li>'
+            
+            if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
+                if glob_val.timeout_flag:
+                    timeout = 'is in pause'
+                else:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout']:
+                        timeout = 'is expiring'
+                    else:
+                        timeout = str(15*glob_val.timeout_d[i]['seconds_timeout'] - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
+                        
+            elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
+                timeout = 'is expiring'
+            else:
+                if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.number_of_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
+                    timeout = 'is expiring'
+                else:
+                    timeout = str((glob_val.number_of_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds())+'s'
+            
+            
+            table_body+='<li class="table-row"><div class="col col-1" data-label="P2P id">'+str(p2p_id)+'</div><div class="col col-2" data-label="Gym Id">'+str(timeout)+'</div><div class="col col-3" data-label="N Genomes">'+str(n_genomes)+'</div><div class="col col-4" data-label="Ended Games">'+str(ended_games)+'</div><div class="col col-5" data-label="Games Playing">'+str(games_playing)+'</div><div class="col col-6" data-label="Genome index">'+str(genome_index)+'</div></li>'
     end_table_tag = '</ul></div>'
     end_body_tag = '</body>'
     end_html_tag = '</html>'
@@ -549,9 +564,7 @@ def handle_invalid_usage(error):
     response.status_code = error.status_code
     return response
 
-   
-@app.route('/v1/envs/', methods=['POST', 'OPTIONS'])
-def env_create():
+def env_create(js):
     """
     Create an instance of the specified environment
 
@@ -562,54 +575,40 @@ def env_create():
     Returns:
         - instance_id: {obs, reward}, ...
     """
-    if request.method == 'POST':
-        glob_val.enter_critical_section()
-        if glob_val.current_trainers >= glob_val.max_number_trainers:
-            glob_val.exit_critical_section()
-            ret = {}
-            ret['full'] = True
-            return jsonify(ret)
-        js = request.get_json()
-        if js is None:
-            try:
-                js = json.loads(request.data)
-            except:
-                ret = {}
-                ret['ok'] = False
-                return jsonify(ret)
-                
-        env_id = get_required_param(js, 'env_id')
-        n_instances = get_required_param(js, 'n_instances')
-        identifier = get_required_param(js,'identifier')
-        seed = None
-        if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
-            glob_val.exit_critical_section()
-            ret = {}
-            ret['ok'] = False
-            return jsonify(ret)
-        ret = {}
-        l1 = []
-        l2 =  []
-        l3 = []
-        for i in range(n_instances):
-            instance = envs.create(env_id, seed)
-            l1.append(instance)
-            ret[instance] = {'obs': envs.reset(l1[i]),'reward': 0}
-            l2.append(ret[instance]['obs'])
-            l3.append(0)
-        l1, l2, l3 = zip(*sorted(zip(l1, l2, l3)))
-        glob_val.hash_enviroments(l1,l2,l3, identifier)
-        glob_val.shutdown_envs(l1)
+    glob_val.enter_critical_section()
+    if glob_val.current_trainers >= glob_val.max_number_trainers:
         glob_val.exit_critical_section()
-        
-        return jsonify(ret)
-    else:
+        ret = {}
+        ret['full'] = True
+        return str(ret)
+    env_id = get_required_param(js, 'env_id')
+    n_instances = get_required_param(js, 'n_instances')
+    identifier = get_required_param(js,'identifier')
+    seed = None
+    if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
+        glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
-        return jsonify(ret)
+        return str(ret)
+    ret = {}
+    l1 = []
+    l2 =  []
+    l3 = []
+    glob_val.exit_critical_section()
+    for i in range(n_instances):
+        instance = envs.create(env_id, seed)
+        l1.append(instance)
+        ret[instance] = {'obs': envs.reset(l1[i]),'reward': 0}
+        l2.append(ret[instance]['obs'])
+        l3.append(0)
+    glob_val.enter_critical_section()
+    l1, l2, l3 = zip(*sorted(zip(l1, l2, l3)))
+    glob_val.hash_enviroments(l1,l2,l3, identifier)
+    glob_val.shutdown_envs(l1)
+    glob_val.exit_critical_section()
+    return str(ret)
 
-@app.route('/v1/envs/step/', methods=['POST', 'OPTIONS'])#multiple step request
-def multi_step():
+def multi_step(js):
     """ 
     request a step
     returning for each instance id as key a observation, reward, done and reset observation in case
@@ -621,78 +620,60 @@ def multi_step():
     - instance1:[obs, reward, done, rest_obs]
     - ...
     """
-    if request.method == 'POST':
-        js = request.get_json()
-       
-        if js is None:
-            try:
-                js = json.loads(request.data)
-            except:
-                ret = {}
-                ret['ok'] = False
-                return jsonify(ret)
-        response = {}
-        keys = list(js.keys())
-        keys.sort()
-        glob_val.enter_critical_section()
-        if not glob_val.steps_check(keys):
-            glob_val.exit_critical_section()
-            ret = {}
-            ret['ok'] = False
-            return jsonify(ret)
-        glob_val.exit_critical_section()
-        try:
-            l1 = []
-            l2 = []
-            l3 = []
-            l4 = []
-            l5 = []
-            l6 = []
-            for key in js:
-                l5.append(key)
-                l6.append(float(js[key]))
-                if glob_val.reverse_shared_d[key][4]:
-                    obs_jsonable = envs.reset(key)
-                    reward = 0
-                    done = False
-                else:
-                    obs_jsonable, reward, done, info = envs.step(key, js[key], False)
-                response[key] = [obs_jsonable, reward, done]
-                l1.append(key)
-                l2.append(obs_jsonable)
-                l3.append(reward)
-                l4.append(done)
-            l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
-        except:
-            ret = {}
-            ret['ok'] = False
-            return jsonify(ret)
-            
-        glob_val.enter_critical_section()
-        try:
-            glob_val.add_actions(l5,l6)
-            glob_val.update_steps(l1,l4,l2,l3)
-            glob_val.shutdown_envs(l1)
-        
-        except:
-            ret = {}
-            ret['ok'] = False
-            glob_val.exit_critical_section()
-            return jsonify(ret)
-        
-        glob_val.exit_critical_section()
-        return jsonify(response)
-    else:
-        ret = {}
-        ret['ok'] = True
-        return jsonify(ret)
-
-
-@app.route('/status/css/style.css', methods=['GET'])
-def get_css():
-    css = 'body { font-family: \'lato\', sans-serif; } .container { max-width: 1000px; margin-left: auto; margin-right: auto; padding-left: 10px; padding-right: 10px; } h2 { font-size: 26px; margin: 20px 0; text-align: center; small { font-size: 0.5em; } } .responsive-table { li { border-radius: 3px; padding: 25px 30px; display: flex; justify-content: space-between; margin-bottom: 25px; } .table-header { background-color: #95A5A6; font-size: 14px; text-transform: uppercase; letter-spacing: 0.03em; } .table-row { background-color: #ffffff; box-shadow: 0px 0px 9px 0px rgba(0,0,0,0.1); } .col-1 { flex-basis: 30%; } .col-2 { flex-basis: 30%; } .col-3 { flex-basis: 10%; } .col-4 { flex-basis: 10%; } .col-5 { flex-basis: 10%; }  .col-6 { flex-basis: 10%; } @media all and (max-width: 767px) { .table-header { display: none; } .table-row{ } li { display: block; } .col { flex-basis: 100%; } .col { display: flex; padding: 10px 0; &:before { color: #6C7A89; padding-right: 10px; content: attr(data-label); flex-basis: 50%; text-align: right; } } } }'
-    return css, 200, {'Content-Type': 'text/css; charset=utf-8'}
     
+    response = {}
+    keys = list(js.keys())
+    keys.sort()
+    glob_val.enter_critical_section()
+    if not glob_val.steps_check(keys):
+        glob_val.exit_critical_section()
+        ret = {}
+        ret['ok'] = False
+        return str(ret)
+    glob_val.exit_critical_section()
+    try:
+        l1 = []
+        l2 = []
+        l3 = []
+        l4 = []
+        l5 = []
+        l6 = []
+        for key in js:
+            l5.append(key)
+            l6.append(float(js[key]))
+            if glob_val.reverse_shared_d[key][4]:
+                obs_jsonable = envs.reset(key)
+                reward = 0
+                done = False
+            else:
+                obs_jsonable, reward, done, info = envs.step(key, js[key], False)
+            response[key] = [obs_jsonable, reward, done]
+            l1.append(key)
+            l2.append(obs_jsonable)
+            l3.append(reward)
+            l4.append(done)
+        l1, l2, l3, l4 = zip(*sorted(zip(l1, l2, l3, l4)))
+    
+    except:
+        ret = {}
+        ret['ok'] = False
+        return str(ret)
+       
+    glob_val.enter_critical_section()
+    try:
+        glob_val.add_actions(l5,l6)
+        glob_val.update_steps(l1,l4,l2,l3)
+        glob_val.shutdown_envs(l1)
+    
+    except:
+        ret = {}
+        ret['ok'] = False
+        glob_val.exit_critical_section()
+        return str(ret)
+
+    glob_val.exit_critical_section()
+    return str(response)
+
 @app.route('/status/<string:training_private_key>', methods=['GET'])
 def get_status(training_private_key):
     if training_private_key == glob_val.training_private_key:
@@ -705,16 +686,6 @@ def get_status(training_private_key):
     glob_val.exit_critical_section()
     return jsonify(ret)
 
-
-
-@app.after_request
-def add_header(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Credentials'] = True
-    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, User-Agent'
-    response.headers['Access-Control-Allow-Methods'] ='GET, POST, PUT, PATCH'
-    return response
-    
 class ServerRun(threading.Thread):
     def __init__(self, ip, port):
         threading.Thread.__init__(self)
@@ -727,15 +698,20 @@ class ServerRun(threading.Thread):
         app.run(host = self.ip, port = self.port)
 
 class timeoutRun(threading.Thread):
-    def __init__(self, timeout):
+    def __init__(self, timeout, training_private_key):
         threading.Thread.__init__(self)
         self.timeout = timeout
         self.timeout_dict = {}
+        self.training_private_key = training_private_key
+        self.polling_url = 'http://0.0.0.0:9050/hostPolling/'+self.training_private_key
     def run(self):
         while True:
             time.sleep(self.timeout)
             
-            #polling to the server
+            try:
+                ret = requests.get(self.polling_url)
+            except:
+                continue
             
             glob_val.enter_critical_section()
             date = datetime.now()
@@ -753,7 +729,7 @@ class timeoutRun(threading.Thread):
                 elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
                     glob_val.timeout_d.pop(i,None)
                 else:
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 3*glob_val.timeout_d[i]['seconds_timeout']:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.number_of_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
                         glob_val.close_environments(glob_val.timeout_d[i]['reverse_shared_d'][0])
             if not glob_val.timeout_flag:
                 self.timeout_dict = {}
@@ -764,6 +740,6 @@ def init_gym_server(private_key,ip = '127.0.0.1', port = 5000):
     starting_thread = ServerRun(ip,port)
     starting_thread.start()
 
-def init_environments_timeout(timeout = 3):
-    starting_thread = timeoutRun(timeout)
+def init_environments_timeout(training_private_key, timeout = 3):
+    starting_thread = timeoutRun(timeout, training_private_key)
     starting_thread.start()
