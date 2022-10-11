@@ -1,0 +1,14 @@
+Metadata-Version: 2.0
+Name: Ezclient
+Version: 1.0.0
+Summary: P2P client library
+Home-page: UNKNOWN
+Author: Riccardo Viviano, Matteo Galdi
+Author-email: riccardoviviano@gmail.com
+License: UNKNOWN
+Platform: UNKNOWN
+Description-Content-Type: text/markdown
+
+P2P client library
+
+

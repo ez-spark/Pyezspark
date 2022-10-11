@@ -5,19 +5,22 @@ with open("README.md", "r", encoding = "utf-8") as fh:
 
 setuptools.setup(
     name = "Pyezspark",
+    packages=['pyezspark'],
     version = "1.0.0",
+    install_requires=['setuptools>=18.0','wheel','Cython', 'numpy', 'Ezclient', 'requests'],
     author = "Riccardo Viviano",
     author_email = "riccardo.viviano@ezspark.ai",
-    description = "EzSpark python package",
+    description = "Ezspark python package",
     long_description = long_description,
     long_description_content_type = "text/markdown",
-
+    url = "https://github.com/ez-spark/Pyezspark",
+    project_urls = {
+        "Bug Tracker": "https://github.com/ez-spark/Pyezspark",
+    },
     classifiers = [
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    package_dir = {"": "src"},
-    packages = setuptools.find_packages(where="src"),
     python_requires = ">=3.6"
 )

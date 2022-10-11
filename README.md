@@ -1,5 +1,21 @@
 # Pyezspark
 
+# Install With PIP
+
+```
+pip install Pyezspark
+```
+
+# Install From the repo
+
+- Download this repo
+
+- run in the repo directory
+
+```
+sh install.sh
+```
+
 # Do You want to train other people models?
 
 - Go to https://app.ezspark.ai
@@ -11,9 +27,9 @@
 - Run
 
 ```
-from Pyezspark import ezspark
+import pyezspark
 training_public_key = ''
-ez = ezspark.EzSpark(training_public_key)
+ez = pyezspark.EzSpark(training_public_key)
 ez.execute()
 ```
 
@@ -30,9 +46,9 @@ ez.execute()
 - Run
 
 ```
-from Pyezspark import ezspark
+import pyezspark
 training_public_key = ''
 training_private_key = ''
-ez = ezspark.EzSpark(training_public_key, training_private_key = training_private_key)
+ez = pyezspark.EzSpark(training_public_key, training_private_key = training_private_key)
 ez.execute()
 ```

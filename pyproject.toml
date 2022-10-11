@@ -1,3 +1,3 @@
 [build-system]
-requires = ["setuptools>=61.0", "Cython", "numpy", "gym", "Ezclient", "json", "requests"]
+requires = ["wheel", "setuptools>=18.0", "Cython", "numpy", "gym", "Ezclient", "requests"]
 build-backend = "setuptools.build_meta"
