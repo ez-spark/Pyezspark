@@ -11,8 +11,9 @@
 - Run
 
 ```
+from Pyezspark import ezspark
 training_public_key = ''
-ez = Pyezspark.EzSpark(training_public_key)
+ez = ezspark.EzSpark(training_public_key)
 ez.execute()
 ```
 
@@ -29,8 +30,9 @@ ez.execute()
 - Run
 
 ```
+from Pyezspark import ezspark
 training_public_key = ''
 training_private_key = ''
-ez = Pyezspark.EzSpark(training_public_key, training_private_key = training_private_key)
+ez = ezspark.EzSpark(training_public_key, training_private_key = training_private_key)
 ez.execute()
 ```
