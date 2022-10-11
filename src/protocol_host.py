@@ -1,5 +1,4 @@
 from . import gym_http_server
-from .pylocaltunnel import lt as localtunnel
 import gym
 import ezclient
 import threading
@@ -50,14 +49,13 @@ class postTunnelRun(threading.Thread):
             if self.client.got_broken_pipe():
                 self.client.connect(self.remote_ip, self.remote_port, genomes_per_client = self.genomes_per_client)
                 continue
-            print(self.training_public_key)
             # we are here, a trainer is communicating with us
             request_body = self.client.get_identifier().decode('utf-8')
-            try:
-                request_body = json.loads(request_body)
-            except:
-                self.client.set_body_http(0, 'null')
-                continue
+            #try:
+            request_body = json.loads(request_body)
+            #except:
+            #    self.client.set_body_http(0, 'null')
+            #    continue
             if 'endpoint' not in request_body:
                 self.client.set_body_http(0, 'null')
                 continue
@@ -175,7 +173,7 @@ class Host:
         ret = {}
         
         while not 'connected' in ret or ret['connected']:
-            ret = requests.get('http://0.0.0.0:9050/isTrainingConnected/'+self.training_private_key)
+            ret = requests.get('https://alpha-p2p.ezspark.ai/rest/isTrainingConnected/'+self.training_private_key)
             ret = json.loads(ret.content)
             if 'connected' in ret and not ret['connected']:
                 break
@@ -212,14 +210,6 @@ class Host:
             if self.client.got_broken_pipe():
                 ret = {}
                 # let's check if the problem is that someone else already started this host training
-                
-                while not 'connected' in ret or ret['connected']:
-                    ret = requests.get('http://0.0.0.0:9050/isTrainingConnected/'+self.training_private_key)
-                    ret = json.loads(ret.content)
-                    if 'connected' in ret and not ret['connected']:
-                        break
-                    time.sleep(2)
-                
                 self.client.connect(remote_ip, remote_port, genomes_per_client = genomes_per_client)
                 continue
             #blocking the timeouts that must talk with the p2p

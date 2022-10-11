@@ -20,7 +20,7 @@ class Trainer:
         self.threads = threads
         self.remote_ip = None
         self.remote_port = None
-        self.ez_server_addr = 'http://127.0.0.1:9050/'
+        self.ez_server_addr = 'https://alpha-p2p.ezspark.ai/rest/'
         self.active_training = 'isTrainingActive/'
         self.environment_creation_endpoint = '/v1/envs/'
         self.next_step_endpoint = '/v1/envs/step/'
@@ -78,7 +78,6 @@ class Trainer:
                 continue
             try:
                 id = self.client_secondary.get_identifier().decode('utf-8').replace("'",'"').replace('False','false').replace('True','true')
-                print("returned: "+str(id))
             except:
                 print("Malicious host")
                 exit(1)
@@ -159,7 +158,7 @@ class Trainer:
                     res = json.loads(res)
                 except:
                     exit(1)
-            if 'ok' in res:
+            if 'ok' in res or res == None:
                 last = datetime.now()
                 self.set_file_descriptor(False)
                 continue
@@ -229,7 +228,7 @@ class Trainer:
                     res = json.loads(res)
                 except:
                     exit(1)
-                if 'ok' in res:
+                if 'ok' in res or res == None:
                     last = datetime.now()
                     self.set_file_descriptor(False)
                     continue

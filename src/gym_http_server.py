@@ -510,7 +510,6 @@ def generateTable():
     body = '<body translate="no">'
     title = '<div class="container"><h2>'+glob_val.training_private_key+' Training</h2>'
     number_of_trainers = '<div><b>Number of Current Trainers: </b>'+str(glob_val.current_trainers)+'</div>'
-    number_of_trainers = '<div><b>Number of Current Trainers: </b>'+str(glob_val.current_trainers)+'</div>'
     generation = '<div><b>Generation: </b>'+str(glob_val.generation)+'</div>'
     total_genomes = '<div><b>Number of genomes for this generation: </b>'+str(glob_val.total_number_of_genomes)+'</div>'
     table_tag = '<ul class="responsive-table">'
@@ -546,10 +545,10 @@ def generateTable():
             elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
                 timeout = 'is expiring'
             else:
-                if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.number_of_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
+                if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
                     timeout = 'is expiring'
                 else:
-                    timeout = str((glob_val.number_of_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds())+'s'
+                    timeout = str((glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
             
             
             table_body+='<li class="table-row"><div class="col col-1" data-label="P2P id">'+str(p2p_id)+'</div><div class="col col-2" data-label="Gym Id">'+str(timeout)+'</div><div class="col col-3" data-label="N Genomes">'+str(n_genomes)+'</div><div class="col col-4" data-label="Ended Games">'+str(ended_games)+'</div><div class="col col-5" data-label="Games Playing">'+str(games_playing)+'</div><div class="col col-6" data-label="Genome index">'+str(genome_index)+'</div></li>'
@@ -683,7 +682,6 @@ def get_status(training_private_key):
         return generateTable()
     ret = {}
     ret['ok'] = False
-    glob_val.exit_critical_section()
     return jsonify(ret)
 
 class ServerRun(threading.Thread):
@@ -703,16 +701,17 @@ class timeoutRun(threading.Thread):
         self.timeout = timeout
         self.timeout_dict = {}
         self.training_private_key = training_private_key
-        self.polling_url = 'http://0.0.0.0:9050/hostPolling/'+self.training_private_key
+        self.polling_url = 'https://alpha-p2p.ezspark.ai/rest/hostPolling/'+self.training_private_key
     def run(self):
+        
         while True:
             time.sleep(self.timeout)
+            
             
             try:
                 ret = requests.get(self.polling_url)
             except:
                 continue
-            
             glob_val.enter_critical_section()
             date = datetime.now()
             l = list(glob_val.timeout_d.keys())
@@ -729,7 +728,7 @@ class timeoutRun(threading.Thread):
                 elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
                     glob_val.timeout_d.pop(i,None)
                 else:
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.number_of_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
                         glob_val.close_environments(glob_val.timeout_d[i]['reverse_shared_d'][0])
             if not glob_val.timeout_flag:
                 self.timeout_dict = {}
