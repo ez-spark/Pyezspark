@@ -3,9 +3,11 @@ from . import protocol_trainer as trainer
 import requests
 import json
 import gym
+import warnings
 
 class EzSpark:
     def __init__(self, training_public_key, training_private_key = None, max_number_of_genomes_per_client = 100):
+        warnings.filterwarnings('ignore')
         self.API_BASE_URL = 'https://api.ezspark.ai/trainings/'
         self.training_public_key = training_public_key
         self.training_private_key = training_private_key
@@ -53,7 +55,7 @@ class EzSpark:
                 
                 try:
                     env = gym.make(gym_game_name)
-                
+                    env.close()
                 
                 except:
                     print("the game does not exists")
@@ -76,7 +78,7 @@ class EzSpark:
                 
                 
                 h = host.Host(gym_game_name, alone_training_iterations,ret,max_number_of_games,max_number_of_steps,self.training_public_key,self.training_private_key,
-                training_private_key1,training_private_key1,training_public_key2,training_private_key2,training_public_key3,
+                training_public_key1,training_private_key1,training_public_key2,training_private_key2,training_public_key3,
                 training_private_key3)
                 h.alone_training()
                 h.distributed_training(self.remote_ip, self.remote_port,self.max_number_of_genomes_per_client,3)

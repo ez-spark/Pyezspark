@@ -50,7 +50,6 @@ class Trainer:
         first_key = complete_secondary_training_public_key[:int(len(complete_secondary_training_public_key)/3)]
         second_key = complete_secondary_training_public_key[int(len(complete_secondary_training_public_key)/3):int(2*len(complete_secondary_training_public_key)/3)]
         third_key = complete_secondary_training_public_key[int(2*len(complete_secondary_training_public_key)/3):]
-        
         # getting the current socket file descriptor
         fd = self.client.get_file_descriptor()
         # init the secondary client
@@ -62,7 +61,7 @@ class Trainer:
             if self.client_secondary.got_broken_pipe():
                 #lets check the training is still active
                 
-                ret = requests.get(self.ez_server_addr+self.active_training+self.training_public_key)
+                ret = requests.get(self.ez_server_addr+self.active_training+self.training_public_key, verify = False)
                 ret = json.loads(ret.content)
                 if not ret['ret']:
                     return None
@@ -99,7 +98,7 @@ class Trainer:
             if self.client.got_broken_pipe():
                 #lets check the training is still active
                 
-                ret = requests.get(self.ez_server_addr+self.active_training+self.training_public_key)
+                ret = requests.get(self.ez_server_addr+self.active_training+self.training_public_key, verify = False)
                 ret = json.loads(ret.content)
                 if not ret['ret']:
                     return

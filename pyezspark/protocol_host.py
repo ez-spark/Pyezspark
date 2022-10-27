@@ -44,18 +44,17 @@ class postTunnelRun(threading.Thread):
             while(not self.client.is_disconnected()):
                 self.client.host_direct_main_loop_http_requests()
                 time.sleep(0.005)
-            
             # we have been disconnected by the server (bad requests or time out)
             if self.client.got_broken_pipe():
                 self.client.connect(self.remote_ip, self.remote_port, genomes_per_client = self.genomes_per_client)
                 continue
             # we are here, a trainer is communicating with us
             request_body = self.client.get_identifier().decode('utf-8')
-            #try:
-            request_body = json.loads(request_body)
-            #except:
-            #    self.client.set_body_http(0, 'null')
-            #    continue
+            try:
+                request_body = json.loads(request_body)
+            except:
+                self.client.set_body_http(0, 'null')
+                continue
             if 'endpoint' not in request_body:
                 self.client.set_body_http(0, 'null')
                 continue
@@ -173,7 +172,7 @@ class Host:
         ret = {}
         
         while not 'connected' in ret or ret['connected']:
-            ret = requests.get('https://alpha-p2p.ezspark.ai/rest/isTrainingConnected/'+self.training_private_key)
+            ret = requests.get('https://alpha-p2p.ezspark.ai/rest/isTrainingConnected/'+self.training_private_key, verify=False)
             ret = json.loads(ret.content)
             if 'connected' in ret and not ret['connected']:
                 break
@@ -198,20 +197,21 @@ class Host:
         socket1_thread.start()
         socket2_thread.start()
         socket3_thread.start()
-        
+        ss = 0
         
         while(True):
             # keep the communication active
-            
             while(not self.client.is_disconnected()):
                 self.client.host_direct_main_loop()
-                
+           
             # we have been disconnected by the server (bad requests or time out)
             if self.client.got_broken_pipe():
+                ss+=1
                 ret = {}
                 # let's check if the problem is that someone else already started this host training
                 self.client.connect(remote_ip, remote_port, genomes_per_client = genomes_per_client)
                 continue
+            ss = 0
             #blocking the timeouts that must talk with the p2p
             gym_http_server.glob_val.enter_critical_section()
             gym_http_server.glob_val.timeout_flag = True

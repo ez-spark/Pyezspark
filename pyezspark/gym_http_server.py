@@ -709,7 +709,7 @@ class timeoutRun(threading.Thread):
             
             
             try:
-                ret = requests.get(self.polling_url)
+                ret = requests.get(self.polling_url, verify=False)
             except:
                 continue
             glob_val.enter_critical_section()
