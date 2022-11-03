@@ -61,22 +61,6 @@ class EzSpark:
                     print("the game does not exists")
                     exit(1)
                 
-                
-                try:
-                    a = env.action_space
-                
-                
-                except:
-                    print("action space is not defined")
-                    exit(1)
-                
-                
-                s = str(a)
-                if 'Discrete' not in s:
-                    print("Your action space is not discrete")
-                    exit(1)
-                
-                
                 h = host.Host(gym_game_name, alone_training_iterations,ret,max_number_of_games,max_number_of_steps,self.training_public_key,self.training_private_key,
                 training_public_key1,training_private_key1,training_public_key2,training_private_key2,training_public_key3,
                 training_private_key3)
