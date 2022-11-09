@@ -374,7 +374,7 @@ class Envs(object):
     def reset(self, instance_id):
         env = self._lookup_env(instance_id)
         obs = env.reset()
-        return env.observation_space.to_jsonable(obs)
+        return flat_state(obs)
 
     def step(self, instance_id, action, render):
         env = self._lookup_env(instance_id)
@@ -385,7 +385,7 @@ class Envs(object):
         if render:
             env.render()
         [observation, reward, done, info] = env.step(nice_action)
-        obs_jsonable = env.observation_space.to_jsonable(observation)
+        obs_jsonable = flat_state(observation)
         return [obs_jsonable, reward, done, info]
 
     def get_action_space_contains(self, instance_id, x):

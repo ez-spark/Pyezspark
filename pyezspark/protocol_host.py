@@ -116,7 +116,7 @@ class Host:
                 reward = 0
                 done = False
                 state = env.reset()
-                state = env.observation_space.to_jsonable(state)
+                state = gym_http_server.flat_state(state)
                 n_games = 0
                 steps = 0
                 for k in range(self.max_number_of_steps):
@@ -131,13 +131,13 @@ class Host:
                             m = out[0][i]
                             ind = i
                     [state, reward, done, info] = env.step(ind)
-                    state = env.observation_space.to_jsonable(state)
+                    state = gym_http_server.flat_state(state)
                     self.neat.increment_fitness_of_genome_ith(j,reward)
                     if done or steps >= self.max_number_of_steps:
                         n_games+=1
                         steps = 0
                         state = env.reset()
-                        state = env.observation_space.to_jsonable(state)
+                        state = gym_http_server.flat_state(state)
                     if n_games >= self.max_number_of_games:
                         break
             self.neat.generation_run()
