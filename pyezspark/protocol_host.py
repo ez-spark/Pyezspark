@@ -49,7 +49,7 @@ class postTunnelRun(threading.Thread):
                 self.client.connect(self.remote_ip, self.remote_port, genomes_per_client = self.genomes_per_client)
                 continue
             # we are here, a trainer is communicating with us
-            request_body = self.client.get_identifier().decode('utf-8')
+            request_body = self.client.get_string().decode('utf-8')
             try:
                 request_body = json.loads(request_body)
             except:
@@ -71,16 +71,16 @@ class postTunnelRun(threading.Thread):
             self.client.set_body_http(1, ret)
 
 
-
 class Host:
     def __init__(self, gym_game_name, alone_training_iterations, configuration_dict,
                  max_number_of_games, max_number_of_steps, training_public_key = None, training_private_key = None, socket1_training_public_key = None,
                  socket1_training_private_key = None,socket2_training_public_key = None,socket2_training_private_key = None,socket3_training_public_key = None,
-                 socket3_training_private_key = None):
+                 socket3_training_private_key = None, t_val = 5):
         if max_number_of_steps <= 0 or max_number_of_games <= 0 or alone_training_iterations < 0:
             print("Error, something among max number of steps, max number of games or alone training iterations is <= 0")
             exit(1)
         ezclient.get_randomness()
+        self.t_val = t_val
         self.gym_game_name = gym_game_name
         self.input_size = configuration_dict['input_size']
         self.output_size = configuration_dict['output_size']
@@ -116,7 +116,7 @@ class Host:
                 reward = 0
                 done = False
                 state = env.reset()
-                state = env.observation_space.to_jsonable(state)
+                state = gym_http_server.flat_state(state)
                 n_games = 0
                 steps = 0
                 for k in range(self.max_number_of_steps):
@@ -131,13 +131,13 @@ class Host:
                             m = out[0][i]
                             ind = i
                     [state, reward, done, info] = env.step(ind)
-                    state = env.observation_space.to_jsonable(state)
+                    state = gym_http_server.flat_state(state)
                     self.neat.increment_fitness_of_genome_ith(j,reward)
                     if done or steps >= self.max_number_of_steps:
                         n_games+=1
                         steps = 0
                         state = env.reset()
-                        state = env.observation_space.to_jsonable(state)
+                        state = gym_http_server.flat_state(state)
                     if n_games >= self.max_number_of_games:
                         break
             self.neat.generation_run()
@@ -160,10 +160,11 @@ class Host:
         gym_http_server.glob_val.max_number_genomes_per_client = genomes_per_client
         gym_http_server.glob_val.max_number_of_steps = self.max_number_of_steps
         gym_http_server.glob_val.max_number_of_games = self.max_number_of_games
+        gym_http_server.glob_val.env_id = self.gym_game_name
         # starting the gym server on another thread
         gym_http_server.init_gym_server(self.training_private_key,ip,port)
         # starting the timeout for the environments
-        gym_http_server.init_environments_timeout(self.training_private_key, timeout)
+        gym_http_server.init_environments_timeout(self.training_private_key, timeout, self.t_val)
         
         # initializing the host client with ezspark proxy
         self.client = ezclient.Client(self.training_public_key,training_private_key = self.training_private_key,neat_class = self.neat, gym_game_name = self.gym_game_name, buffer_size = 30000, genome_input = self.input_size, genome_output = self.output_size, url_name = link)

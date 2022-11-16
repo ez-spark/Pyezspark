@@ -57,6 +57,7 @@ class Trainer:
         while True:
             while(not self.client_secondary.is_disconnected()):
                 self.client_secondary.trainer_direct_main_loop_http_requests()
+            
             # if something went wrong
             if self.client_secondary.got_broken_pipe():
                 #lets check the training is still active
@@ -76,7 +77,7 @@ class Trainer:
                 self.client_secondary.connect_http_handler(self.remote_ip,self.remote_port,temp,http_request_string,fd)
                 continue
             try:
-                id = self.client_secondary.get_identifier().decode('utf-8').replace("'",'"').replace('False','false').replace('True','true')
+                id = self.client_secondary.get_string().decode('utf-8').replace("'",'"').replace('False','false').replace('True','true')
             except:
                 print("Malicious host")
                 exit(1)
@@ -156,6 +157,7 @@ class Trainer:
                     res = self.send_http_request(param_init_str, secondary_sockets)
                     res = json.loads(res)
                 except:
+                    print("exiting")
                     exit(1)
             if 'ok' in res or res == None:
                 last = datetime.now()

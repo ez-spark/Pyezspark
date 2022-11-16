@@ -14,11 +14,11 @@ import requests
 
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.ERROR)
-
+timeout_value = 5
 
 def flat_state(vector):
     if type(vector) == np.ndarray:
-        return vector.flatten()
+        return vector.flatten().tolist()
     elif type(vector) == list:
         v = vector
         if any(isinstance(i, list) for i in vector):
@@ -27,10 +27,9 @@ def flat_state(vector):
     return None
 
 init_all = 0
-
 ########## Globals that must be modified and shared by threads ##########
 class GlobalVal:
-    def __init__(self, max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games):
+    def __init__(self, max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games, t_val):
         if max_number_genomes_per_client <= 0:
             print("Error, max number of genomes can't be less than 1")
             exit(1)
@@ -45,6 +44,7 @@ class GlobalVal:
         self.max_number_trainers = max_number_trainers#max number of trainers that we can allow togheter
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
+        self.env_id = None
         self.generation = 1
         self.id_p2p = {}#each p2p id is associated to n_genomes
         self.shared_d = {}
@@ -53,6 +53,9 @@ class GlobalVal:
         self.training_private_key = None
         self.generation = 0
         self.total_number_of_genomes = 0
+        self.t_val = t_val
+        self.stored_envs = []
+        self.stored_envs_flag = False
         '''
         shared_d struct:
         (key, value) = (random id,{'ids':[list_of_environment_ids], 'interactions':integer})
@@ -199,6 +202,12 @@ class GlobalVal:
                 return False 
         return True
     
+    def get_t_val(self):
+        return self.t_val
+        
+    def set_t_val(self, value):
+        self.t_val = value
+        
     def update_steps(self, list_of_environments_id, done, states, rewards):
         '''
         we must first check that these environments exist
@@ -309,7 +318,7 @@ class GlobalVal:
                     else:
                         self.close_environments(self.timeout_d[i]['reverse_shared_d'][0])
    
-    def set_globals(self,max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games):
+    def set_globals(self,max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games, t_val):
         if max_number_genomes_per_client <= 0:
             print("Error, max number of genomes can't be less than 1")
             exit(1)
@@ -324,6 +333,7 @@ class GlobalVal:
         self.max_number_trainers = max_number_trainers#max number of trainers that we can allow togheter
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
+        self.t_val = t_val
         
         
 
@@ -342,7 +352,7 @@ class Envs(object):
     """
     def __init__(self):
         self.envs = {}
-        self.id_len = 32 #increasing from 8 to 32 for security reasons
+        self.id_len = 16 #increasing from 8 to 16 for security reasons
 
     def _lookup_env(self, instance_id):
         try:
@@ -356,17 +366,29 @@ class Envs(object):
         except KeyError:
             raise InvalidUsage('Instance_id {} unknown'.format(instance_id))
 
-    def create(self, env_id, seed=None):
+    def create(self, env_id, pre_made_env = None, seed=None):
+        if pre_made_env == None:
+            try:
+                env = gym.make(env_id)
+                if seed:
+                    env.seed(seed)
+            except gym.error.Error:
+                raise InvalidUsage("Attempted to look up malformed environment ID '{}'".format(env_id))
+        else:
+            env = pre_made_env
+        instance_id = str(uuid.uuid4().hex)[:self.id_len]
+        self.envs[instance_id] = env
+        return instance_id
+        
+    def create_rough(self, env_id, seed=None):
         try:
             env = gym.make(env_id)
             if seed:
                 env.seed(seed)
+            return envs
         except gym.error.Error:
             raise InvalidUsage("Attempted to look up malformed environment ID '{}'".format(env_id))
-
-        instance_id = str(uuid.uuid4().hex)[:self.id_len]
-        self.envs[instance_id] = env
-        return instance_id
+            return None
 
     def list_all(self):
         return dict([(instance_id, env.spec.id) for (instance_id, env) in self.envs.items()])
@@ -374,7 +396,7 @@ class Envs(object):
     def reset(self, instance_id):
         env = self._lookup_env(instance_id)
         obs = env.reset()
-        return env.observation_space.to_jsonable(obs)
+        return flat_state(obs)
 
     def step(self, instance_id, action, render):
         env = self._lookup_env(instance_id)
@@ -385,7 +407,7 @@ class Envs(object):
         if render:
             env.render()
         [observation, reward, done, info] = env.step(nice_action)
-        obs_jsonable = env.observation_space.to_jsonable(observation)
+        obs_jsonable = flat_state(observation)
         return [obs_jsonable, reward, done, info]
 
     def get_action_space_contains(self, instance_id, x):
@@ -455,13 +477,14 @@ class Envs(object):
         env = self._lookup_env(instance_id)
         env.close()
         self._remove_env(instance_id)
+        
 
 
 ########## App setup ##########
 app = Flask(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 envs = Envs()
-glob_val = GlobalVal(10,10,5,1)
+glob_val = GlobalVal(10,10,5,1,5)
 
 ########## Error handling ##########
 class InvalidUsage(Exception):
@@ -540,7 +563,7 @@ def generateTable():
                     if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout']:
                         timeout = 'is expiring'
                     else:
-                        timeout = str(15*glob_val.timeout_d[i]['seconds_timeout'] - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
+                        timeout = str(15*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
                         
             elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
                 timeout = 'is expiring'
@@ -548,7 +571,7 @@ def generateTable():
                 if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
                     timeout = 'is expiring'
                 else:
-                    timeout = str((glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
+                    timeout = str((glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
             
             
             table_body+='<li class="table-row"><div class="col col-1" data-label="P2P id">'+str(p2p_id)+'</div><div class="col col-2" data-label="Gym Id">'+str(timeout)+'</div><div class="col col-3" data-label="N Genomes">'+str(n_genomes)+'</div><div class="col col-4" data-label="Ended Games">'+str(ended_games)+'</div><div class="col col-5" data-label="Games Playing">'+str(games_playing)+'</div><div class="col col-6" data-label="Genome index">'+str(genome_index)+'</div></li>'
@@ -593,13 +616,25 @@ def env_create(js):
     l1 = []
     l2 =  []
     l3 = []
+    pre_made_envs = None
+    if glob_val.stored_envs_flag:
+        pre_made_envs = glob_val.stored_envs
+        glob_val.stored_envs = []
+        glob_val.stored_envs_flag = False
     glob_val.exit_critical_section()
     for i in range(n_instances):
-        instance = envs.create(env_id, seed)
+        pre_made = None
+        if pre_made_envs != None:
+            pre_made = pre_made_envs[i]
+        instance = envs.create(env_id, pre_made, seed)
         l1.append(instance)
         ret[instance] = {'obs': envs.reset(l1[i]),'reward': 0}
         l2.append(ret[instance]['obs'])
         l3.append(0)
+    if pre_made_envs != None and n_instances < len(pre_made_envs):
+        for i in range(n_instances,len(pre_made_envs)):
+            pre_made_envs[i].close()
+        
     glob_val.enter_critical_section()
     l1, l2, l3 = zip(*sorted(zip(l1, l2, l3)))
     glob_val.hash_enviroments(l1,l2,l3, identifier)
@@ -707,12 +742,31 @@ class timeoutRun(threading.Thread):
         while True:
             time.sleep(self.timeout)
             
-            
+            # polling
             try:
                 ret = requests.get(self.polling_url, verify=False)
             except:
                 continue
+            
+            #pre storing some instances
+            date = datetime.now()
             glob_val.enter_critical_section()
+            if not glob_val.stored_envs_flag:
+                glob_val.exit_critical_section()
+                for i in range(glob_val.max_number_genomes_per_client):
+                    date_now = datetime.now()
+                    if (date_now-date).total_seconds() > self.timeout:
+                        try:
+                            ret = requests.get(self.polling_url, verify=False)
+                            date = date_now
+                        except:
+                            print("something went wrong polling the server")
+                    instance = envs.create_rough(glob_val.env_id)
+                    glob_val.stored_envs.append(instance)
+                glob_val.enter_critical_section()
+                glob_val.stored_envs_flag = True
+            
+            # checking the timeouts
             date = datetime.now()
             l = list(glob_val.timeout_d.keys())
             for i in l:
@@ -722,13 +776,13 @@ class timeoutRun(threading.Thread):
                     else:
                         if i in self.timeout_dict:
                             glob_val.timeout_d[i]['last_interaction'] = date - timedelta(seconds=self.timeout_dict[i])
-                        if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout']:
+                        if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value:
                             glob_val.checking_states.pop(glob_val.timeout_d[i]['reverse_shared_d'][0],None)
                             glob_val.timeout_d.pop(i,None)
                 elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
                     glob_val.timeout_d.pop(i,None)
                 else:
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value:
                         glob_val.close_environments(glob_val.timeout_d[i]['reverse_shared_d'][0])
             if not glob_val.timeout_flag:
                 self.timeout_dict = {}
@@ -739,6 +793,7 @@ def init_gym_server(private_key,ip = '127.0.0.1', port = 5000):
     starting_thread = ServerRun(ip,port)
     starting_thread.start()
 
-def init_environments_timeout(training_private_key, timeout = 3):
+def init_environments_timeout(training_private_key, timeout = 3, t_val = 5):
+    timeout_value = t_val
     starting_thread = timeoutRun(timeout, training_private_key)
     starting_thread.start()
