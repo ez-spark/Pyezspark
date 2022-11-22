@@ -385,7 +385,7 @@ class Envs(object):
             env = gym.make(env_id)
             if seed:
                 env.seed(seed)
-            return envs
+            return env
         except gym.error.Error:
             raise InvalidUsage("Attempted to look up malformed environment ID '{}'".format(env_id))
             return None
@@ -394,8 +394,8 @@ class Envs(object):
         return dict([(instance_id, env.spec.id) for (instance_id, env) in self.envs.items()])
 
     def reset(self, instance_id):
-        env = self._lookup_env(instance_id)
-        obs = env.reset()
+        environment = self._lookup_env(instance_id)
+        obs = environment.reset()
         return flat_state(obs)
 
     def step(self, instance_id, action, render):

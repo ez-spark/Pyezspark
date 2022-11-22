@@ -204,7 +204,6 @@ class Host:
             # keep the communication active
             while(not self.client.is_disconnected()):
                 self.client.host_direct_main_loop()
-           
             # we have been disconnected by the server (bad requests or time out)
             if self.client.got_broken_pipe():
                 ss+=1
