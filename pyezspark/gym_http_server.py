@@ -1,4 +1,3 @@
-from flask import Flask, request, jsonify, make_response
 import threading, time, random
 import uuid
 import gym
@@ -9,8 +8,9 @@ import sys
 import json
 import string
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.ERROR)
@@ -27,6 +27,7 @@ def flat_state(vector):
     return None
 
 init_all = 0
+
 ########## Globals that must be modified and shared by threads ##########
 class GlobalVal:
     def __init__(self, max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games, t_val):
@@ -74,6 +75,8 @@ class GlobalVal:
         self.current_index = self.generate_indexing()
         self.next_index = self.generate_indexing()
     
+        
+    
     def set_private_key(self,private_key):
         self.training_private_key = private_key
     
@@ -84,7 +87,7 @@ class GlobalVal:
         self.total_number_of_genomes = genomes
         
     def generate_indexing(self):
-        return 1 + int(random.random()*self.max_number_genomes_per_client/2)
+        return 1 + int(random.uniform(0.8,1)*self.max_number_genomes_per_client/2)
     
     def enter_critical_section(self):
         self.mutex.acquire()
@@ -177,7 +180,7 @@ class GlobalVal:
         for i in range(n):
             self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
             self.checking_states[list_of_environments_id[0]]['rewards'][list_of_environments_id[i]] = 0
-        self.timeout_d[id] = {'current_id_index': self.id_p2p[current_id]['index'],'current_id':current_id, 'shared_d':id, 'checking_states':list_of_environments_id[0], 'reverse_shared_d':list_of_environments_id, 'last_interaction':datetime.now(), 'seconds_timeout':0.6+n*(self.generation*0.001+0.2)}
+        self.timeout_d[id] = {'current_id_index': self.id_p2p[current_id]['index'],'current_id':current_id, 'shared_d':id, 'checking_states':list_of_environments_id[0], 'reverse_shared_d':list(list_of_environments_id), 'last_interaction':datetime.now(), 'seconds_timeout':0.6+n*(self.generation*0.001+0.2)}
         return self.check_states(list_of_environments_id,states,rewards)
         
     # someone is asking us to make a new step, lets check if its request is fair
@@ -196,10 +199,14 @@ class GlobalVal:
                 return False
         if id == None:
             return False
-        n2 = len(self.shared_d[id]['ids'])
-        for i in range(n2):
-            if self.shared_d[id]['ids'][i] not in list_of_environments_id:
-                return False 
+       
+        try:
+            n2 = len(self.shared_d[id]['ids'])
+            for i in range(n2):
+                if self.shared_d[id]['ids'][i] not in list_of_environments_id:
+                    return False 
+        except:
+            return False
         return True
     
     def get_t_val(self):
@@ -230,7 +237,7 @@ class GlobalVal:
         if id == None:
             return False
         
-        # reseting the last interaction time
+        # resetting the last interaction time
         flag = False
         for i in self.timeout_d:
             for j in self.timeout_d[i]['reverse_shared_d']:
@@ -283,17 +290,18 @@ class GlobalVal:
         return l
     
     def close_environments(self, environment):
+        id = self.checking_states[environment]['associated_id']
         self.checking_states.pop(environment,None)
-        if environment in self.reverse_shared_d:
-            id = self.reverse_shared_d[environment][0]
-            l = list(self.reverse_shared_d.keys())
-            for i in l:
-                if self.reverse_shared_d[i][0] == id:
-                    envs.env_close(i)
-                    self.reverse_shared_d.pop(i,None)
-            self.shared_d.pop(id,None)
-            self.timeout_d.pop(id,None)
-            self.current_trainers-=1
+        l = []
+        for i in self.reverse_shared_d:
+            if self.reverse_shared_d[i][0] == id:
+                l.append(i)
+        for i in l:
+            envs.env_close(i)
+            self.reverse_shared_d.pop(i,None)
+        self.shared_d.pop(id,None)
+        self.timeout_d.pop(id,None)
+        self.current_trainers-=1
     
     def close_from_timeouts(self, id = None):
         if id == None:
@@ -317,7 +325,7 @@ class GlobalVal:
                         self.timeout_d.pop(i,None)
                     else:
                         self.close_environments(self.timeout_d[i]['reverse_shared_d'][0])
-   
+                        
     def set_globals(self,max_number_genomes_per_client, max_number_trainers, max_number_of_steps, max_number_of_games, t_val):
         if max_number_genomes_per_client <= 0:
             print("Error, max number of genomes can't be less than 1")
@@ -481,8 +489,6 @@ class Envs(object):
 
 
 ########## App setup ##########
-app = Flask(__name__)
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 envs = Envs()
 glob_val = GlobalVal(10,10,5,1,5)
 
@@ -536,7 +542,7 @@ def generateTable():
     generation = '<div><b>Generation: </b>'+str(glob_val.generation)+'</div>'
     total_genomes = '<div><b>Number of genomes for this generation: </b>'+str(glob_val.total_number_of_genomes)+'</div>'
     table_tag = '<ul class="responsive-table">'
-    table_head = '<li class="table-header"><div class="col col-1">P2P id</div><div class="col col-2">Timeout</div><div class="col col-3">N Genomes</div><div class="col col-4">Ended Games</div><div class="col col-5">Games Playing</div><div class="col col-6">Genome index</div></li>'
+    table_head = '<li class="table-header"><div class="col col-1">Peer Id</div><div class="col col-2">Timeout</div><div class="col col-3">N Genomes</div><div class="col col-4">Ended Games</div><div class="col col-5">Games Playing</div><div class="col col-6">Genome index</div></li>'
     table_body = ''
     l = list(glob_val.timeout_d.keys())
     for i in l:
@@ -556,16 +562,16 @@ def generateTable():
                 ended_games = n_genomes-games_playing
             genome_index = glob_val.timeout_d[i]['current_id_index']
             
-            if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
+            if glob_val.timeout_d[i]['checking_states'] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
                 if glob_val.timeout_flag:
                     timeout = 'is in pause'
                 else:
-                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout']:
+                    if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*15*glob_val.timeout_d[i]['seconds_timeout']:
                         timeout = 'is expiring'
                     else:
-                        timeout = str(15*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
+                        timeout = str((glob_val.current_trainers+1)*15*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value - ((date-glob_val.timeout_d[i]['last_interaction']).total_seconds()))+'s'
                         
-            elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
+            elif glob_val.timeout_d[i]['checking_states'] not in glob_val.checking_states and i not in glob_val.shared_d:
                 timeout = 'is expiring'
             else:
                 if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout']:
@@ -580,11 +586,6 @@ def generateTable():
     end_html_tag = '</html>'
     return html_tag+head_tag+css_link+style+end_head_tag+body+title+number_of_trainers+generation+total_genomes+table_tag+table_head+table_body+end_table_tag+end_body_tag+end_html_tag
 
-@app.errorhandler(InvalidUsage)
-def handle_invalid_usage(error):
-    response = jsonify(error.to_dict())
-    response.status_code = error.status_code
-    return response
 
 def env_create(js):
     """
@@ -708,16 +709,42 @@ def multi_step(js):
     glob_val.exit_critical_section()
     return str(response)
 
-@app.route('/status/<string:training_private_key>', methods=['GET'])
-def get_status(training_private_key):
-    if training_private_key == glob_val.training_private_key:
-        glob_val.enter_critical_section()
-        s = generateTable()
-        glob_val.exit_critical_section()
-        return generateTable()
-    ret = {}
-    ret['ok'] = False
-    return jsonify(ret)
+def get_status():
+    glob_val.enter_critical_section()
+    s = generateTable()
+    glob_val.exit_critical_section()
+    return s
+    
+    
+    
+
+
+
+class S(BaseHTTPRequestHandler):
+    def _set_headers(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+    def _html(self, message):
+        """This just generates an HTML document that includes `message`
+        in the body. Override, or re-write this do do more interesting stuff.
+        """
+        content = f"<html><body><h1>{message}</h1></body></html>"
+        return content.encode("utf8")  # NOTE: must return a bytes object!
+
+    def do_GET(self):
+        self._set_headers()
+        self.wfile.write(bytes(get_status(), encoding = 'utf-8'))
+
+    def do_HEAD(self):
+        self._set_headers()
+
+
+def run(server_class=HTTPServer, handler_class=S, addr="localhost", port=8000):
+    server_address = (addr, port)
+    httpd = server_class(server_address, handler_class)
+    httpd.serve_forever()
 
 class ServerRun(threading.Thread):
     def __init__(self, ip, port):
@@ -728,7 +755,7 @@ class ServerRun(threading.Thread):
         # helper function to execute the threads
     def run(self):
         print('starting the gym server on '+self.ip+':'+str(self.port))
-        app.run(host = self.ip, port = self.port)
+        run(addr = self.ip, port = self.port)
 
 class timeoutRun(threading.Thread):
     def __init__(self, timeout, training_private_key):
@@ -770,20 +797,20 @@ class timeoutRun(threading.Thread):
             date = datetime.now()
             l = list(glob_val.timeout_d.keys())
             for i in l:
-                if glob_val.timeout_d[i]['reverse_shared_d'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
-                    if glob_val.timeout_flag:
+                if glob_val.timeout_d[i]['checking_states'][0] in glob_val.checking_states and i not in glob_val.shared_d:#has been already closed only the checking states are still active
+                    if glob_val.timeout_flag and not i in self.timeout_dict:
                         self.timeout_dict[i] = (date-glob_val.timeout_d[i]['last_interaction']).total_seconds()
                     else:
                         if i in self.timeout_dict:
                             glob_val.timeout_d[i]['last_interaction'] = date - timedelta(seconds=self.timeout_dict[i])
-                        if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= 15*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value:
-                            glob_val.checking_states.pop(glob_val.timeout_d[i]['reverse_shared_d'][0],None)
+                        if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*15*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value:
+                            glob_val.checking_states.pop(glob_val.timeout_d[i]['checking_states'],None)
                             glob_val.timeout_d.pop(i,None)
-                elif glob_val.timeout_d[i]['reverse_shared_d'][0] not in glob_val.checking_states and i not in glob_val.shared_d:
+                elif glob_val.timeout_d[i]['checking_states'] not in glob_val.checking_states and i not in glob_val.shared_d:
                     glob_val.timeout_d.pop(i,None)
                 else:
                     if (date-glob_val.timeout_d[i]['last_interaction']).total_seconds() >= (glob_val.current_trainers+1)*3*glob_val.timeout_d[i]['seconds_timeout'] + timeout_value:
-                        glob_val.close_environments(glob_val.timeout_d[i]['reverse_shared_d'][0])
+                        glob_val.close_environments(glob_val.timeout_d[i]['checking_states'])
             if not glob_val.timeout_flag:
                 self.timeout_dict = {}
             glob_val.exit_critical_section()

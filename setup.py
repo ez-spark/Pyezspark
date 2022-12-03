@@ -6,8 +6,8 @@ with open("README.md", "r", encoding = "utf-8") as fh:
 setuptools.setup(
     name = "Pyezspark",
     packages=['pyezspark'],
-    version = "2.0.0",
-    install_requires=['setuptools>=18.0','wheel','Cython', 'numpy', 'Ezclient', 'requests', 'gym', 'six', 'Flask'],
+    version = "2.1.0",
+    install_requires=['setuptools>=18.0','wheel','Cython', 'numpy', 'Ezclient', 'requests', 'gym', 'six'],
     author = "Riccardo Viviano",
     author_email = "riccardo.viviano@ezspark.ai",
     description = "Ezspark python package",

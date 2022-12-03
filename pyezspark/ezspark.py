@@ -60,7 +60,7 @@ class EzSpark:
                     env.close()
                 
                 except:
-                    print("the game does not exists")
+                    print("the game with name "+gym_game_name+" does not exist")
                     exit(1)
                 
                 h = host.Host(gym_game_name, alone_training_iterations,ret,max_number_of_games,max_number_of_steps,self.training_public_key,self.training_private_key,

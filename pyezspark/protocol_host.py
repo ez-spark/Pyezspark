@@ -6,6 +6,7 @@ import re
 import time
 import requests
 import json
+import datetime
 
 class localTunnelRun(threading.Thread):
     def __init__(self, ip, port):
@@ -43,7 +44,7 @@ class postTunnelRun(threading.Thread):
             # keep the communication active
             while(not self.client.is_disconnected()):
                 self.client.host_direct_main_loop_http_requests()
-                time.sleep(0.005)
+                time.sleep(0.0005)
             # we have been disconnected by the server (bad requests or time out)
             if self.client.got_broken_pipe():
                 self.client.connect(self.remote_ip, self.remote_port, genomes_per_client = self.genomes_per_client)
@@ -85,9 +86,10 @@ class Host:
         self.input_size = configuration_dict['input_size']
         self.output_size = configuration_dict['output_size']
         self.configuration_dict = configuration_dict
+        gen = configuration_dict['generations']
         self.neat = ezclient.Neat(self.input_size, self.output_size, initial_population = configuration_dict['initial_population'],
                                   species_threshold = configuration_dict['species_threshold'],max_population = configuration_dict['max_population'],
-                                  generations = configuration_dict['generations'], percentage_survivors_per_specie = configuration_dict['percentage_survivors_per_specie'], 
+                                  generations = gen, percentage_survivors_per_specie = configuration_dict['percentage_survivors_per_specie'], 
                                   connection_mutation_rate = configuration_dict['connection_mutation_rate'], new_connection_assignment_rate = configuration_dict['new_connection_assignment_rate'], 
                                   add_connection_big_specie_rate = configuration_dict['add_connection_big_specie_rate'], add_connection_small_specie_rate = configuration_dict['add_connection_small_specie_rate'], 
                                   add_node_specie_rate = configuration_dict['add_node_specie_rate'], activate_connection_rate = configuration_dict['activate_connection_rate'], 
@@ -199,7 +201,6 @@ class Host:
         socket2_thread.start()
         socket3_thread.start()
         ss = 0
-        
         while(True):
             # keep the communication active
             while(not self.client.is_disconnected()):
@@ -225,6 +226,7 @@ class Host:
             if self.client.trainer_has_identifier():
                 # instantiate the identifier assigned
                 current_id = self.client.get_identifier().decode('utf-8')
+                current_id_index = self.client.get_index_value(current_id)
                 gym_http_server.glob_val.enter_critical_section()
                 environment_name = self.client.get_instance_name().decode('utf-8')
                 
@@ -264,7 +266,6 @@ class Host:
                             gym_http_server.glob_val.enter_critical_section()
                     gym_http_server.glob_val.checking_states.pop(environment_name, None)
                 gym_http_server.glob_val.exit_critical_section()
-                
             if is_ok:# is ok as trainer, or is malicious but did not relly hurted us, or is ok but timeout timed out it
                 if self.client.set_body(1, gym_http_server.glob_val.current_index, gym_http_server.glob_val.next_index, flag2):# if is true, a generation run has been completed
                     #setting some informations for the http retrivieng information host side
@@ -275,8 +276,6 @@ class Host:
                     gym_http_server.glob_val.exit_critical_section()
                     if current_id == None:
                         current_id = self.client.get_identifier().decode('utf-8')
-                    
-                    current_id_index = self.client.get_index_value(current_id)
                     gen_run = self.neat.get_generation_iter()
                     if gen_run >= self.configuration_dict['generations']:
                         print("end of the training")
@@ -290,13 +289,15 @@ class Host:
                 else:
                     if current_id == None:
                         current_id = self.client.get_identifier().decode('utf-8')
-                    current_id_index = self.client.get_index_value(current_id)
-                    if we_care:
-                        gym_http_server.glob_val.enter_critical_section()
-                        gym_http_server.glob_val.close_from_timeouts(id = current_id_index)
-                        gym_http_server.glob_val.exit_critical_section()
+                    else:
+                        if we_care:
+                            gym_http_server.glob_val.enter_critical_section()
+                            gym_http_server.glob_val.close_from_timeouts(id = current_id_index)
+                            gym_http_server.glob_val.exit_critical_section()
+                            
                 if current_id == None:
                     current_id = self.client.get_identifier().decode('utf-8')
+                current_id_index = self.client.get_index_value(current_id)
                 gym_http_server.glob_val.enter_critical_section()
                 gym_http_server.glob_val.id_p2p[current_id] = {'n_genomes':self.client.get_trainer_n_genomes(),'index':current_id_index}
                 gym_http_server.glob_val.exit_critical_section()

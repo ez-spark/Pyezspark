@@ -3,6 +3,8 @@ import requests
 import time
 import json
 from datetime import datetime
+import random
+import string
 
 class Trainer:
     def __init__(self, gym_game_name, training_public_key, input_size, output_size, max_number_of_games, max_number_of_steps, threads, username=None):
@@ -54,10 +56,15 @@ class Trainer:
         fd = self.client.get_file_descriptor()
         # init the secondary client
         self.client_secondary.send_http_request_setup(self.remote_ip,self.remote_port,http_request_string,complete_secondary_training_public_key,fd)
+        last = datetime.now()
+        current = datetime.now()
+        limit = 600#10 minutes            
         while True:
             while(not self.client_secondary.is_disconnected()):
                 self.client_secondary.trainer_direct_main_loop_http_requests()
-            
+                current = datetime.now()
+                if (current-last).total_seconds() >= limit:
+                    exit(1)
             # if something went wrong
             if self.client_secondary.got_broken_pipe():
                 #lets check the training is still active
@@ -95,6 +102,9 @@ class Trainer:
             # communication protocol is acting
             while(not self.client.is_disconnected()):
                 self.client.trainer_direct_main_loop()
+                current = datetime.now()
+                if (current-last).total_seconds() >= limit:
+                    exit(1)
             #we have been disconnected by the server (timeout, or we communicated something bad to host, or to the server)
             if self.client.got_broken_pipe():
                 #lets check the training is still active
@@ -139,7 +149,7 @@ class Trainer:
                 self.set_file_descriptor(True)
             else:
                 self.first_iteration_distributed_training = False
-            # creating the environments:
+            # creating the environments:ù
             res = {'full':True}
             first_time = True
             param_init = {'endpoint': self.environment_creation_endpoint, 'env_id':environment_name, 'n_instances':n_genomes, 'identifier':identifier}
@@ -162,6 +172,9 @@ class Trainer:
             if 'ok' in res or res == None:
                 last = datetime.now()
                 self.set_file_descriptor(False)
+                self.client.free_genomes()
+                self.client.set_reset_body_when_reconnect()
+                self.client.connect(self.remote_ip,self.remote_port)
                 continue
             list_keys = list(res.keys())
             list_keys.sort()
@@ -186,6 +199,7 @@ class Trainer:
                 done.append(0)
                 game_done.append(False)
             # training
+            flag_break = False
             while True:
                 list_output_to_keep = []
                 for i in range(n_genomes):
@@ -226,19 +240,26 @@ class Trainer:
                     param_post_str = param_post_str.replace("'",'"')
                 try:
                     res = self.send_http_request(param_post_str, secondary_sockets)
+                    res2 = res
                     res = json.loads(res)
                 except:
                     exit(1)
                 if 'ok' in res or res == None:
                     last = datetime.now()
                     self.set_file_descriptor(False)
-                    continue
+                    flag_break = True
+                    self.client.free_genomes()
+                    self.client.set_reset_body_when_reconnect()
+                    self.client.connect(self.remote_ip,self.remote_port)
+                    break
                 list_got = list(res.keys())
                 for i in range(n_genomes):
                     if list_keys[i] in list_got:
                         list_states[i] = res[list_keys[i]][0]
                         list_rewards[i] = res[list_keys[i]][1]
                         game_done[i] = res[list_keys[i]][2]
+            if flag_break:
+                continue
             self.client.set_values_back_in_body()
             last = datetime.now()
             self.set_file_descriptor(False)
