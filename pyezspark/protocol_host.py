@@ -158,7 +158,7 @@ class Host:
                 end = time.time()
                 if first_time:
                     first_time = False
-                    if end-start >= 1:
+                    if 100*(end-start)/number_genomes >= 1:
                         stop_execution = True
                 k = 0
                 for j in range(number_genomes):
