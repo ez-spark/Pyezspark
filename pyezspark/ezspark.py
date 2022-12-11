@@ -1,5 +1,5 @@
-from . import protocol_host as host
-from . import protocol_trainer as trainer 
+from pyezspark import protocol_host as host
+from pyezspark import protocol_trainer as trainer 
 import requests
 import json
 import gym
@@ -31,7 +31,8 @@ class EzSpark:
                 output_size = ret['output_size']
                 max_number_of_games = ret['max_number_of_games']
                 max_number_of_steps = ret['max_number_of_steps']
-                t = trainer.Trainer(gym_game_name, self.training_public_key, input_size, output_size, max_number_of_games, max_number_of_steps, threads, username = username)
+                sub_games = ret['sub_games']
+                t = trainer.Trainer(gym_game_name, self.training_public_key, input_size, output_size, max_number_of_games, max_number_of_steps, threads, username = username, sub_games = sub_games)
                 t.connect(self.remote_ip, self.remote_port)
                 t.train()
             else:

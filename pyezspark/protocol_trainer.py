@@ -7,18 +7,19 @@ import random
 import string
 
 class Trainer:
-    def __init__(self, gym_game_name, training_public_key, input_size, output_size, max_number_of_games, max_number_of_steps, threads, username=None):
+    def __init__(self, gym_game_name, training_public_key, input_size, output_size, max_number_of_games, max_number_of_steps, threads, username=None, sub_games = 1):
         if max_number_of_steps <= 0 or max_number_of_games <= 0 or input_size <= 0 or output_size <= 0 or threads <= 0:
             print("Error, input_size and/or output and/or max_number_of_games and/or max_number of steps size are wrong")
             exit(1)
-        self.client = ezclient.Client(training_public_key,gym_game_name=gym_game_name, buffer_size = 30000, genome_input = input_size, genome_output = output_size, username=username)
-        self.client_secondary = ezclient.Client(training_public_key,gym_game_name=gym_game_name, buffer_size = 30000, genome_input = input_size, genome_output = output_size, username=username)
+        self.client = ezclient.Client(training_public_key,gym_game_name=gym_game_name, buffer_size = 100000, genome_input = input_size, genome_output = output_size, username=username)
+        self.client_secondary = ezclient.Client(training_public_key,gym_game_name=gym_game_name, buffer_size = 100000, genome_input = input_size, genome_output = output_size, username=username)
         self.gym_game_name = gym_game_name
         self.training_public_key = training_public_key
         self.input_size = input_size
         self.output_size = output_size
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
+        self.sub_games = sub_games
         self.threads = threads
         self.remote_ip = None
         self.remote_port = None
@@ -96,6 +97,7 @@ class Trainer:
         last = datetime.now()
         limit = 1200#20 minutes
         while(True):
+            self.client.set_sub_games(self.sub_games)
             current = datetime.now()
             if (current-last).total_seconds() >= limit:
                 exit(1)
@@ -129,7 +131,7 @@ class Trainer:
             if not self.client.identifier_is_set():
                 self.client.get_body_identifier()
             # set the genomes structures
-            self.client.get_genomes()
+            self.client.get_genomes(self.sub_games)
             # set the innovation number of connections
             self.client.get_global_innovation_number_connections()
             # set the innovation number of nodes
@@ -152,6 +154,7 @@ class Trainer:
             # creating the environments:ù
             res = {'full':True}
             first_time = True
+            n_genomes*=self.sub_games
             param_init = {'endpoint': self.environment_creation_endpoint, 'env_id':environment_name, 'n_instances':n_genomes, 'identifier':identifier}
             param_init_str = str(param_init)
             param_init_str = param_init_str.replace("'",'"')
@@ -176,6 +179,18 @@ class Trainer:
                 self.client.set_reset_body_when_reconnect()
                 self.client.connect(self.remote_ip,self.remote_port)
                 continue
+            
+            max_games = [0]*self.sub_games
+            count = 0
+            while count != self.max_number_of_games:
+                for i in range(self.sub_games):
+                    max_games[i]+=1
+                    count+=1
+                    if count == self.max_number_of_games:
+                        break
+            
+            
+            
             list_keys = list(res.keys())
             list_keys.sort()
             if n_genomes != len(list_keys):
@@ -189,32 +204,34 @@ class Trainer:
             to_count_yet = []
             done = []
             game_done = []
+            max_number_of_games = []
             
             for i in range(n_genomes):
-                list_states.append(res[list_keys[i]]['obs'])
+                list_states.append(res[list_keys[i]])
                 list_rewards.append(0)
                 steps.append(0)
                 games.append(0)
                 to_count_yet.append(1)
                 done.append(0)
                 game_done.append(False)
+                max_number_of_games.append(max_games[int(i/int(n_genomes/self.sub_games))])
             # training
             flag_break = False
             while True:
                 list_output_to_keep = []
                 for i in range(n_genomes):
-                    if games[i] < self.max_number_of_games-1 or games[i] < self.max_number_of_games and steps[i] < self.max_number_of_steps-1 and not game_done[i]:
+                    if games[i] < max_number_of_games[i]-1 or games[i] < max_number_of_games[i] and steps[i] < self.max_number_of_steps-1 and not game_done[i]:
                         list_output_to_keep.append(1)
                     else:
                         list_output_to_keep.append(0)
-                out = self.client.forward_genomes(list_states, self.threads, done, to_count_yet, list_keys, list_rewards, list_output_to_keep)
+                out = self.client.forward_genomes(list_states, self.threads, done, to_count_yet, list_keys, list_rewards, list_output_to_keep, self.sub_games)
                 param_post = {}
                 list_of_environments = []
                 actions = []
                 j = 0
                 n_done = 0
                 for i in range(n_genomes):
-                    if steps[i] < self.max_number_of_steps and games[i] < self.max_number_of_games:
+                    if steps[i] < self.max_number_of_steps and games[i] < max_number_of_games[i]:
                         steps[i]+=1
                         if game_done[i] or steps[i] == self.max_number_of_steps:
                             games[i]+=1
@@ -222,7 +239,7 @@ class Trainer:
                     if done[i] > 0:
                         to_count_yet[i] = 0
                     else:
-                        if games[i] < self.max_number_of_games:
+                        if games[i] < max_number_of_games[i]:
                             list_of_environments.append(list_keys[i])
                             actions.append(out[j])
                             
@@ -256,8 +273,7 @@ class Trainer:
                 for i in range(n_genomes):
                     if list_keys[i] in list_got:
                         list_states[i] = res[list_keys[i]][0]
-                        list_rewards[i] = res[list_keys[i]][1]
-                        game_done[i] = res[list_keys[i]][2]
+                        game_done[i] = res[list_keys[i]][1]
             if flag_break:
                 continue
             self.client.set_values_back_in_body()

@@ -45,6 +45,8 @@ class GlobalVal:
         self.max_number_trainers = max_number_trainers#max number of trainers that we can allow togheter
         self.max_number_of_games = max_number_of_games
         self.max_number_of_steps = max_number_of_steps
+        self.minimum_reward = 0
+        self.sub_games = 1
         self.env_id = None
         self.generation = 1
         self.id_p2p = {}#each p2p id is associated to n_genomes
@@ -101,7 +103,7 @@ class GlobalVal:
         return id.replace("'",",").replace('"','!')
     
     def create_environments_is_ok(self, n_instances):
-        if n_instances < 1 or n_instances > self.max_number_genomes_per_client:
+        if n_instances < 1 or n_instances > self.max_number_genomes_per_client*self.sub_games:
             return False
         if self.current_trainers >= self.max_number_trainers:
             return False
@@ -120,7 +122,7 @@ class GlobalVal:
         for i in range(len(list_of_state_ids)):
             if self.checking_states[list_of_state_ids[i]]['associated_id'] == id:
                 for j in range(n):
-                    self.checking_states[list_of_state_ids[i]]['rewards'][list_of_environments_id[j]] += reward[j]
+                    self.checking_states[list_of_state_ids[i]]['rewards'][self.reverse_shared_d[list_of_environments_id[j]][5]] += reward[j]
                     # if it enters in this if we are recording stuff
                     # remember we must record also the actions given back
                     # and this will always happen!
@@ -128,10 +130,8 @@ class GlobalVal:
                         l = flat_state(states[j])
                         for kk in l:
                             self.checking_states[list_of_state_ids[i]]['list_to_check'].append(kk)
-                        self.checking_states[list_of_state_ids[i]]['list_to_check'].append(reward[j])
                         self.checking_states[list_of_state_ids[i]]['current_index']+=self.checking_states[list_of_state_ids[i]]['index_got']
                         self.checking_states[list_of_state_ids[i]]['current_index'] = self.checking_states[list_of_state_ids[i]]['current_index']%self.checking_states[list_of_state_ids[i]]['length']
-                        
                     self.checking_states[list_of_state_ids[i]]['index']+=1
                     self.checking_states[list_of_state_ids[i]]['index'] = self.checking_states[list_of_state_ids[i]]['index']%self.checking_states[list_of_state_ids[i]]['length']
                 return True
@@ -165,7 +165,7 @@ class GlobalVal:
         there should no be more or equals current trainers as max number of trainers. Also,
         the number of environments should not exceeds the number of maximum genomes per client
         '''
-        if len(list_of_environments_id) > self.max_number_genomes_per_client:
+        if len(list_of_environments_id) > self.max_number_genomes_per_client*self.sub_games:
             return False
         if self.current_trainers >= self.max_number_trainers:
             return False
@@ -175,11 +175,28 @@ class GlobalVal:
                 return False
         self.current_trainers+=1# adding a trainer 
         id = self.generate_id(32)
+        list_prim_id = []
+        
+        # to hash the rewards
+        for i in range(int(n/self.sub_games)):
+            list_prim_id.append(self.generate_id(32))
+        list_prim_id.sort()
+        
+        #number of games each copy of the genomes must play
+        list_of_iterations = [0]*self.sub_games
+        count = 0
+        while count != self.max_number_of_games:
+            for i in range(self.sub_games):
+                list_of_iterations[i]+=1
+                count+=1
+                if count == self.max_number_of_games:
+                    break
+        
         self.shared_d[id] = {'ids':list(list_of_environments_id), 'interactions':1}#to an identifier is associated the list
         self.checking_states[list_of_environments_id[0]] = {'index':0, 'associated_id':id, 'current_index':(self.current_index-1)%n,'index_got':self.current_index, 'length': n, 'list_to_check':[], 'rewards':{}}
         for i in range(n):
-            self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False]#the reverse, id, games, steps, done or not, last time we called this it was done or not
-            self.checking_states[list_of_environments_id[0]]['rewards'][list_of_environments_id[i]] = 0
+            self.reverse_shared_d[list_of_environments_id[i]] = [id,0,1,False,False, list_prim_id[i%(int(n/self.sub_games))], list_of_iterations[int(i/int(n/self.sub_games))]]#the reverse, id, games, steps, done or not, last time we called this it was done or not, the id of the genome associated
+            self.checking_states[list_of_environments_id[0]]['rewards'][list_prim_id[i%(int(n/self.sub_games))]] = 0
         self.timeout_d[id] = {'current_id_index': self.id_p2p[current_id]['index'],'current_id':current_id, 'shared_d':id, 'checking_states':list_of_environments_id[0], 'reverse_shared_d':list(list_of_environments_id), 'last_interaction':datetime.now(), 'seconds_timeout':0.6+n*(self.generation*0.001+0.2)}
         return self.check_states(list_of_environments_id,states,rewards)
         
@@ -260,7 +277,7 @@ class GlobalVal:
                 self.reverse_shared_d[list_of_environments_id[i]][4] = True
             else:
                 self.reverse_shared_d[list_of_environments_id[i]][4] = False
-            if self.reverse_shared_d[list_of_environments_id[i]][1] >= self.max_number_of_games:
+            if self.reverse_shared_d[list_of_environments_id[i]][1] >= self.reverse_shared_d[list_of_environments_id[i]][6]:
                 self.reverse_shared_d[list_of_environments_id[i]][3] = True
         return True
     
@@ -608,7 +625,7 @@ def env_create(js):
     n_instances = get_required_param(js, 'n_instances')
     identifier = get_required_param(js,'identifier')
     seed = None
-    if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes'] != n_instances:
+    if type(n_instances) != int or type(env_id) != str or not glob_val.create_environments_is_ok(n_instances) or identifier not in glob_val.id_p2p or identifier in glob_val.id_p2p and glob_val.id_p2p[identifier]['n_genomes']*glob_val.sub_games != n_instances:
         glob_val.exit_critical_section()
         ret = {}
         ret['ok'] = False
@@ -629,9 +646,18 @@ def env_create(js):
             pre_made = pre_made_envs[i]
         instance = envs.create(env_id, pre_made, seed)
         l1.append(instance)
-        ret[instance] = {'obs': envs.reset(l1[i]),'reward': 0}
-        l2.append(ret[instance]['obs'])
-        l3.append(0)
+        e = envs.reset(l1[i])
+        if type(e) == type(tuple()):
+            e = e[0]
+        e = flat_state(e)
+        reward = 1
+        if glob_val.minimum_reward <= 0:
+            reward = -1*glob_val.minimum_reward
+        if glob_val.minimum_reward < 1:
+            reward += 1
+        ret[instance] = e
+        l2.append(ret[instance])
+        l3.append(reward)
     if pre_made_envs != None and n_instances < len(pre_made_envs):
         for i in range(n_instances,len(pre_made_envs)):
             pre_made_envs[i].close()
@@ -678,11 +704,26 @@ def multi_step(js):
             l6.append(float(js[key]))
             if glob_val.reverse_shared_d[key][4]:
                 obs_jsonable = envs.reset(key)
-                reward = 0
+                if type(obs_jsonable) == type(tuple()):
+                    obs_jsonable = obs_jsonable[0]
+                reward = 1
+                if glob_val.minimum_reward <= 0:
+                    reward = -1*glob_val.minimum_reward
+                if glob_val.minimum_reward < 1:
+                    reward += 1
                 done = False
+                
             else:
-                obs_jsonable, reward, done, info = envs.step(key, js[key], False)
-            response[key] = [obs_jsonable, reward, done]
+                e = envs.step(key, js[key], False)
+                obs_jsonable = e[0]
+                reward = e[1]
+                if glob_val.minimum_reward <= 0:
+                    reward += -1*glob_val.minimum_reward
+                if glob_val.minimum_reward < 1:
+                    reward += 1
+                done = e[2]
+            obs_jsonable = flat_state(obs_jsonable)
+            response[key] = [obs_jsonable, done]
             l1.append(key)
             l2.append(obs_jsonable)
             l3.append(reward)
@@ -780,7 +821,7 @@ class timeoutRun(threading.Thread):
             glob_val.enter_critical_section()
             if not glob_val.stored_envs_flag:
                 glob_val.exit_critical_section()
-                for i in range(glob_val.max_number_genomes_per_client):
+                for i in range(glob_val.max_number_genomes_per_client*glob_val.sub_games):
                     date_now = datetime.now()
                     if (date_now-date).total_seconds() > self.timeout:
                         try:

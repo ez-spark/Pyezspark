@@ -1,4 +1,4 @@
-from . import gym_http_server
+from pyezspark import gym_http_server
 import gym
 import ezclient
 import threading
@@ -44,7 +44,7 @@ class postTunnelRun(threading.Thread):
             # keep the communication active
             while(not self.client.is_disconnected()):
                 self.client.host_direct_main_loop_http_requests()
-                time.sleep(0.0005)
+                time.sleep(0.0001)
             # we have been disconnected by the server (bad requests or time out)
             if self.client.got_broken_pipe():
                 self.client.connect(self.remote_ip, self.remote_port, genomes_per_client = self.genomes_per_client)
@@ -76,8 +76,8 @@ class Host:
     def __init__(self, gym_game_name, alone_training_iterations, configuration_dict,
                  max_number_of_games, max_number_of_steps, training_public_key = None, training_private_key = None, socket1_training_public_key = None,
                  socket1_training_private_key = None,socket2_training_public_key = None,socket2_training_private_key = None,socket3_training_public_key = None,
-                 socket3_training_private_key = None, t_val = 5):
-        if max_number_of_steps <= 0 or max_number_of_games <= 0 or alone_training_iterations < 0:
+                 socket3_training_private_key = None, t_val = 5, threads_for_alone_training = 4):
+        if max_number_of_steps <= 0 or max_number_of_games <= 0 or alone_training_iterations < 0 or threads_for_alone_training < 1:
             print("Error, something among max number of steps, max number of games or alone training iterations is <= 0")
             exit(1)
         ezclient.get_randomness()
@@ -85,11 +85,13 @@ class Host:
         self.gym_game_name = gym_game_name
         self.input_size = configuration_dict['input_size']
         self.output_size = configuration_dict['output_size']
+        self.threads_for_alone_training = threads_for_alone_training
         self.configuration_dict = configuration_dict
-        gen = configuration_dict['generations']
+        if self.configuration_dict['minimum_reward'] == None:
+            self.configuration_dict['minimum_reward'] = 0
         self.neat = ezclient.Neat(self.input_size, self.output_size, initial_population = configuration_dict['initial_population'],
                                   species_threshold = configuration_dict['species_threshold'],max_population = configuration_dict['max_population'],
-                                  generations = gen, percentage_survivors_per_specie = configuration_dict['percentage_survivors_per_specie'], 
+                                  generations = configuration_dict['generations'], percentage_survivors_per_specie = configuration_dict['percentage_survivors_per_specie'], 
                                   connection_mutation_rate = configuration_dict['connection_mutation_rate'], new_connection_assignment_rate = configuration_dict['new_connection_assignment_rate'], 
                                   add_connection_big_specie_rate = configuration_dict['add_connection_big_specie_rate'], add_connection_small_specie_rate = configuration_dict['add_connection_small_specie_rate'], 
                                   add_node_specie_rate = configuration_dict['add_node_specie_rate'], activate_connection_rate = configuration_dict['activate_connection_rate'], 
@@ -109,41 +111,90 @@ class Host:
         self.client = None
     
     def alone_training(self):
-        env = gym.make(self.gym_game_name)
+        list_envs = []
+        list_states = []
+        list_games = []
+        list_steps = []
+        list_keep_going = []
         for i in range(self.alone_training_iterations):
             self.neat.set_generation_iter(i)
             number_genomes = self.neat.get_number_of_genomes()
             self.neat.reset_fitnesses()
+            length = len(list_envs)
             for j in range(number_genomes):
-                reward = 0
-                done = False
-                state = env.reset()
-                state = gym_http_server.flat_state(state)
-                n_games = 0
-                steps = 0
-                for k in range(self.max_number_of_steps):
-                    steps+=1
-                    l = [state]
-                    indices = [j]
-                    out = self.neat.ff_ith_genomes(l,indices,1)
-                    m = -1
-                    ind = -1
-                    for i in range(len(out)):
-                        if out[0][i] > m:
-                            m = out[0][i]
-                            ind = i
-                    [state, reward, done, info] = env.step(ind)
+                if j >= length:
+                    env = gym.make(self.gym_game_name)
+                    state = env.reset()
+                    if type(state) == type(tuple()): 
+                        state = state[0]
                     state = gym_http_server.flat_state(state)
-                    self.neat.increment_fitness_of_genome_ith(j,reward)
-                    if done or steps >= self.max_number_of_steps:
-                        n_games+=1
-                        steps = 0
-                        state = env.reset()
-                        state = gym_http_server.flat_state(state)
-                    if n_games >= self.max_number_of_games:
-                        break
-            self.neat.generation_run()
+                    reward = 1
+                    done = False
+                    list_envs.append(env)
+                    list_states.append(state)
+                    list_games.append(0)
+                    list_steps.append(0)
+                    list_keep_going.append(True)
+                else:
+                    env = list_envs[j]
+                    state = env.reset()
+                    if type(state) == type(tuple()): 
+                        state = state[0]
+                    state = gym_http_server.flat_state(state)
+                    reward = 1
+                    done = False
+                    list_states[j] = state
+                    list_games[j] = 0
+                    list_steps[j] = 0
+                    list_keep_going[j] = True
             
+            stop_execution = False
+            first_time = True
+            while True in list_keep_going[:number_genomes]:
+                for j in range(number_genomes):
+                    list_steps[j]+=1
+                start = time.time()
+                out = self.neat.ff_all_genomes(list_states, self.threads_for_alone_training,number_genomes, list_genomes_to_ff = list_keep_going)
+                end = time.time()
+                if first_time:
+                    first_time = False
+                    if end-start >= 1:
+                        stop_execution = True
+                k = 0
+                for j in range(number_genomes):
+                    if list_keep_going[j]:
+                        minimum = out[k][0]
+                        action = 0
+                        for z in range(len(out[k])):
+                            if out[k][z] > minimum:
+                                minimum = out[k][z]
+                                action = z
+                        k+=1
+                        ret = list_envs[j].step(action)
+                        state = ret[0]
+                        reward = ret[1]
+                        done = ret[2] 
+                        if self.configuration_dict['minimum_reward'] <= 0:
+                            reward += -1*self.configuration_dict['minimum_reward']
+                        if self.configuration_dict['minimum_reward'] < 1:
+                            reward+=1
+                        state = gym_http_server.flat_state(state)
+                        list_states[j] = state
+                        self.neat.increment_fitness_of_genome_ith(j,reward/self.max_number_of_games)
+                        if done or list_steps[j] >= self.max_number_of_steps:
+                            list_steps[j] = 0
+                            list_games[j]+=1
+                            state = list_envs[j].reset()
+                            if type(state) == type(tuple()): 
+                                state = state[0]
+                            state = gym_http_server.flat_state(state)
+                            list_states[j] = state
+                        if list_games[j] >= self.max_number_of_games:
+                            list_keep_going[j] = False
+            self.neat.generation_run()
+            if stop_execution:
+                self.alone_training_iterations = i+1
+                break
         self.neat.reset_fitnesses()
     
     def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000, timeout=3):
@@ -162,6 +213,8 @@ class Host:
         gym_http_server.glob_val.max_number_genomes_per_client = genomes_per_client
         gym_http_server.glob_val.max_number_of_steps = self.max_number_of_steps
         gym_http_server.glob_val.max_number_of_games = self.max_number_of_games
+        gym_http_server.glob_val.minimum_reward = self.configuration_dict['minimum_reward']
+        gym_http_server.glob_val.sub_games = self.configuration_dict['sub_games']
         gym_http_server.glob_val.env_id = self.gym_game_name
         # starting the gym server on another thread
         gym_http_server.init_gym_server(self.training_private_key,ip,port)
@@ -169,7 +222,7 @@ class Host:
         gym_http_server.init_environments_timeout(self.training_private_key, timeout, self.t_val)
         
         # initializing the host client with ezspark proxy
-        self.client = ezclient.Client(self.training_public_key,training_private_key = self.training_private_key,neat_class = self.neat, gym_game_name = self.gym_game_name, buffer_size = 30000, genome_input = self.input_size, genome_output = self.output_size, url_name = link)
+        self.client = ezclient.Client(self.training_public_key,training_private_key = self.training_private_key,neat_class = self.neat, gym_game_name = self.gym_game_name, buffer_size = 100000, genome_input = self.input_size, genome_output = self.output_size, url_name = link)
         # connection for p2p through ezprotocol
         
         ret = {}
@@ -191,11 +244,11 @@ class Host:
         gym_http_server.glob_val.exit_critical_section()
         
         socket1_thread = postTunnelRun('http://'+ip+':'+str(port),self.socket1_training_public_key, self.socket1_training_private_key,
-                                        self.neat, self.gym_game_name, 30000, self.input_size, self.output_size, link, remote_ip, remote_port, genomes_per_client)
+                                        self.neat, self.gym_game_name, 100000, self.input_size, self.output_size, link, remote_ip, remote_port, genomes_per_client)
         socket2_thread = postTunnelRun('http://'+ip+':'+str(port),self.socket2_training_public_key, self.socket2_training_private_key,
-                                        self.neat, self.gym_game_name, 30000, self.input_size, self.output_size, link, remote_ip, remote_port, genomes_per_client)
+                                        self.neat, self.gym_game_name, 100000, self.input_size, self.output_size, link, remote_ip, remote_port, genomes_per_client)
         socket3_thread = postTunnelRun('http://'+ip+':'+str(port),self.socket3_training_public_key, self.socket3_training_private_key,
-                                        self.neat, self.gym_game_name, 30000, self.input_size, self.output_size, link, remote_ip, remote_port, genomes_per_client)
+                                        self.neat, self.gym_game_name, 100000, self.input_size, self.output_size, link, remote_ip, remote_port, genomes_per_client)
         
         socket1_thread.start()
         socket2_thread.start()
@@ -247,7 +300,7 @@ class Host:
                     l.sort()
                     l_rew = []
                     for i in l:
-                        l_rew.append(d[i])
+                        l_rew.append(d[i]/self.max_number_of_games)
                     self.client.set_fitnesses(l_rew)
                 # if it is not malicious, or we could care about this
                 if is_ok and not flag2:
