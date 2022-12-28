@@ -7,6 +7,7 @@ import time
 import requests
 import json
 import datetime
+import os
 
 class localTunnelRun(threading.Thread):
     def __init__(self, ip, port):
@@ -73,23 +74,28 @@ class postTunnelRun(threading.Thread):
 
 
 class Host:
-    def __init__(self, gym_game_name, alone_training_iterations, configuration_dict,
+    def __init__(self, gym_game_name, alone_training_iterations, genomes_per_client, configuration_dict,
                  max_number_of_games, max_number_of_steps, training_public_key = None, training_private_key = None, socket1_training_public_key = None,
                  socket1_training_private_key = None,socket2_training_public_key = None,socket2_training_private_key = None,socket3_training_public_key = None,
-                 socket3_training_private_key = None, t_val = 5, threads_for_alone_training = 4):
+                 socket3_training_private_key = None, t_val = 5, threads_for_alone_training = 4, neat_file = "neat.bin", alone_iteration_max_population = 300):
         if max_number_of_steps <= 0 or max_number_of_games <= 0 or alone_training_iterations < 0 or threads_for_alone_training < 1:
             print("Error, something among max number of steps, max number of games or alone training iterations is <= 0")
             exit(1)
+        neat_as_byte = None
+        if os.path.exists(neat_file):
+            neat_as_byte = neat_file
         ezclient.get_randomness()
         self.t_val = t_val
         self.gym_game_name = gym_game_name
         self.input_size = configuration_dict['input_size']
         self.output_size = configuration_dict['output_size']
         self.threads_for_alone_training = threads_for_alone_training
+        self.neat_file = neat_file
+        self.alone_iteration_max_population = alone_iteration_max_population
         self.configuration_dict = configuration_dict
         if self.configuration_dict['minimum_reward'] == None:
             self.configuration_dict['minimum_reward'] = 0
-        self.neat = ezclient.Neat(self.input_size, self.output_size, initial_population = configuration_dict['initial_population'],
+        self.neat = ezclient.Neat(self.input_size, self.output_size,neat_as_byte = neat_as_byte, initial_population = configuration_dict['initial_population'],
                                   species_threshold = configuration_dict['species_threshold'],max_population = configuration_dict['max_population'],
                                   generations = configuration_dict['generations'], percentage_survivors_per_specie = configuration_dict['percentage_survivors_per_specie'], 
                                   connection_mutation_rate = configuration_dict['connection_mutation_rate'], new_connection_assignment_rate = configuration_dict['new_connection_assignment_rate'], 
@@ -111,6 +117,7 @@ class Host:
         self.client = None
     
     def alone_training(self):
+        self.neat.set_max_population(self.alone_iteration_max_population)
         list_envs = []
         list_states = []
         list_games = []
@@ -119,6 +126,7 @@ class Host:
         for i in range(self.alone_training_iterations):
             self.neat.set_generation_iter(i)
             number_genomes = self.neat.get_number_of_genomes()
+            print("number of genomes iteration number "+str(i)+": "+str(number_genomes))
             self.neat.reset_fitnesses()
             length = len(list_envs)
             for j in range(number_genomes):
@@ -128,7 +136,7 @@ class Host:
                     if type(state) == type(tuple()): 
                         state = state[0]
                     state = gym_http_server.flat_state(state)
-                    reward = 1
+                    reward = 0
                     done = False
                     list_envs.append(env)
                     list_states.append(state)
@@ -141,7 +149,7 @@ class Host:
                     if type(state) == type(tuple()): 
                         state = state[0]
                     state = gym_http_server.flat_state(state)
-                    reward = 1
+                    reward = 0
                     done = False
                     list_states[j] = state
                     list_games[j] = 0
@@ -156,10 +164,12 @@ class Host:
                 start = time.time()
                 out = self.neat.ff_all_genomes(list_states, self.threads_for_alone_training,number_genomes, list_genomes_to_ff = list_keep_going)
                 end = time.time()
+                '''
                 if first_time:
                     first_time = False
-                    if 100*(end-start)/number_genomes >= 1:
+                    if (end-start)/number_genomes >= 6 and number_genomes / :
                         stop_execution = True
+                '''
                 k = 0
                 for j in range(number_genomes):
                     if list_keep_going[j]:
@@ -173,11 +183,7 @@ class Host:
                         ret = list_envs[j].step(action)
                         state = ret[0]
                         reward = ret[1]
-                        done = ret[2] 
-                        if self.configuration_dict['minimum_reward'] <= 0:
-                            reward += -1*self.configuration_dict['minimum_reward']
-                        if self.configuration_dict['minimum_reward'] < 1:
-                            reward+=1
+                        done = ret[2]
                         state = gym_http_server.flat_state(state)
                         list_states[j] = state
                         self.neat.increment_fitness_of_genome_ith(j,reward/self.max_number_of_games)
@@ -192,12 +198,14 @@ class Host:
                         if list_games[j] >= self.max_number_of_games:
                             list_keep_going[j] = False
             self.neat.generation_run()
+            self.neat.save_neat(self.neat_file)
             if stop_execution:
                 self.alone_training_iterations = i+1
                 break
         self.neat.reset_fitnesses()
     
     def distributed_training(self, remote_ip, remote_port,genomes_per_client,max_number_of_trainers, ip = '127.0.0.1', port=5000, timeout=3):
+        self.neat.set_max_population(self.configuration_dict['max_population'])
         if genomes_per_client <= 0 or max_number_of_trainers <= 0:
             print("Error, genomes per client can't be <= 0, same for max number of trainers")
             exit(1)
@@ -327,6 +335,8 @@ class Host:
                     gym_http_server.glob_val.set_generation(generation)
                     gym_http_server.glob_val.set_genomes(self.neat.get_number_of_genomes())
                     gym_http_server.glob_val.exit_critical_section()
+                    self.neat.reset_fitnesses()
+                    self.neat.save_neat(self.neat_file)
                     if current_id == None:
                         current_id = self.client.get_identifier().decode('utf-8')
                     gen_run = self.neat.get_generation_iter()

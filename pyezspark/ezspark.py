@@ -9,6 +9,7 @@ class EzSpark:
     def __init__(self, training_public_key, training_private_key = None, max_number_of_genomes_per_client = 100, t_val = 5, max_number_of_trainers = 10):
         warnings.filterwarnings('ignore')
         self.API_BASE_URL = 'https://api.ezspark.ai/trainings/'
+        #self.API_BASE_URL = 'https://api.ezspark.ai/api/trainings/'
         self.training_public_key = training_public_key
         self.training_private_key = training_private_key
         self.remote_ip = '62.112.9.80'
@@ -21,6 +22,7 @@ class EzSpark:
             exit(1)
         
     def execute(self, username = 'erre4', threads = 4):
+        
         try:
             if self.training_private_key == None:
                 # trainer
@@ -59,14 +61,14 @@ class EzSpark:
                 try:
                     env = gym.make(gym_game_name)
                     env.close()
-                
+                    
                 except:
                     print("the game with name "+gym_game_name+" does not exist")
                     exit(1)
                 
-                h = host.Host(gym_game_name, alone_training_iterations,ret,max_number_of_games,max_number_of_steps,self.training_public_key,self.training_private_key,
+                h = host.Host(gym_game_name, alone_training_iterations,self.max_number_of_genomes_per_client,ret,max_number_of_games,max_number_of_steps,self.training_public_key,self.training_private_key,
                 training_public_key1,training_private_key1,training_public_key2,training_private_key2,training_public_key3,
-                training_private_key3, self.t_val)
+                training_private_key3, self.t_val, threads_for_alone_training = threads)
                 h.alone_training()
                 h.distributed_training(self.remote_ip, self.remote_port,self.max_number_of_genomes_per_client,self.max_number_of_trainers)
         except:

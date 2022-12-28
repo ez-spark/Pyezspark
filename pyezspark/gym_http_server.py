@@ -10,6 +10,7 @@ import string
 import logging
 from datetime import datetime, timedelta
 import requests
+from itertools import chain
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 logger = logging.getLogger('werkzeug')
@@ -650,11 +651,7 @@ def env_create(js):
         if type(e) == type(tuple()):
             e = e[0]
         e = flat_state(e)
-        reward = 1
-        if glob_val.minimum_reward <= 0:
-            reward = -1*glob_val.minimum_reward
-        if glob_val.minimum_reward < 1:
-            reward += 1
+        reward = 0
         ret[instance] = e
         l2.append(ret[instance])
         l3.append(reward)
@@ -706,21 +703,13 @@ def multi_step(js):
                 obs_jsonable = envs.reset(key)
                 if type(obs_jsonable) == type(tuple()):
                     obs_jsonable = obs_jsonable[0]
-                reward = 1
-                if glob_val.minimum_reward <= 0:
-                    reward = -1*glob_val.minimum_reward
-                if glob_val.minimum_reward < 1:
-                    reward += 1
+                reward = 0
                 done = False
                 
             else:
                 e = envs.step(key, js[key], False)
                 obs_jsonable = e[0]
                 reward = e[1]
-                if glob_val.minimum_reward <= 0:
-                    reward += -1*glob_val.minimum_reward
-                if glob_val.minimum_reward < 1:
-                    reward += 1
                 done = e[2]
             obs_jsonable = flat_state(obs_jsonable)
             response[key] = [obs_jsonable, done]
