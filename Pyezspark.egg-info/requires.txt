@@ -1,0 +1,8 @@
+setuptools>=18.0
+wheel
+Cython
+numpy
+Ezclient
+requests
+gym
+six

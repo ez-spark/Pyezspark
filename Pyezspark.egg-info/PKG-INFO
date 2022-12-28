@@ -1,0 +1,69 @@
+Metadata-Version: 2.1
+Name: Pyezspark
+Version: 2.2.1
+Summary: Ezspark python package
+Home-page: https://github.com/ez-spark/Pyezspark
+Author: Riccardo Viviano
+Author-email: riccardo.viviano@ezspark.ai
+Project-URL: Bug Tracker, https://github.com/ez-spark/Pyezspark
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+# Pyezspark
+
+# Install With PIP
+
+```
+pip install Pyezspark
+```
+
+# Install From the repo
+
+- Download this repo
+
+- run in the repo directory
+
+```
+sh install.sh
+```
+
+# Do You want to train other people models?
+
+- Go to https://app.ezspark.ai
+
+- Select a training from the dashboard
+
+- In the details take the training public key
+
+- Run
+
+```
+import pyezspark
+training_public_key = ''
+ez = pyezspark.EzSpark(training_public_key)
+ez.execute()
+```
+
+# Do You want to host a training?
+
+- Go to https://app.ezspark.ai
+
+- Create an account
+
+- Create a new training
+
+- Get the training public key and training private key from the info of "My Trainings"
+
+- Run
+
+```
+import pyezspark
+training_public_key = ''
+training_private_key = ''
+ez = pyezspark.EzSpark(training_public_key, training_private_key = training_private_key)
+ez.execute()
+```
